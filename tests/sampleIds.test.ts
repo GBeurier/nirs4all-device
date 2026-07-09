@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextSampleId } from "@/runtime/sampleIds";
+import { nextRepetitionId, nextSampleId } from "@/runtime/sampleIds";
 
 describe("sample id iteration", () => {
   it("increments trailing numeric identifiers while preserving padding", () => {
@@ -13,5 +13,17 @@ describe("sample id iteration", () => {
 
   it("falls back to the first default sample id", () => {
     expect(nextSampleId("")).toBe("sample-001");
+  });
+});
+
+describe("repetition id iteration", () => {
+  it("increments numeric repetition identifiers", () => {
+    expect(nextRepetitionId("1")).toBe("2");
+    expect(nextRepetitionId("009")).toBe("010");
+    expect(nextRepetitionId("rep-03")).toBe("rep-04");
+  });
+
+  it("falls back to the first repetition id", () => {
+    expect(nextRepetitionId("")).toBe("1");
   });
 });

@@ -92,6 +92,7 @@ function metadataToCsv(captures: SpectrumCapture[], context: ExportContext): str
       "project_id",
       "session_id",
       "sample_id",
+      "repetition",
       "name",
       "created_at",
       "quality_status",
@@ -109,6 +110,7 @@ function metadataToCsv(captures: SpectrumCapture[], context: ExportContext): str
       projectId: context.project.id,
       sessionId: "",
       sampleId: "",
+      repetition: "",
       name: context.project.name,
       createdAt: context.project.createdAt,
       metadata: context.project.metadata,
@@ -122,6 +124,7 @@ function metadataToCsv(captures: SpectrumCapture[], context: ExportContext): str
       projectId: session.projectId,
       sessionId: session.id,
       sampleId: "",
+      repetition: "",
       name: session.name,
       createdAt: session.createdAt,
       metadata: session.metadata,
@@ -136,6 +139,7 @@ function metadataToCsv(captures: SpectrumCapture[], context: ExportContext): str
       projectId: capture.projectId ?? session?.projectId ?? "",
       sessionId: capture.sessionId ?? "",
       sampleId: capture.sampleId,
+      repetition: capture.metadata?.repetition ?? "",
       name: capture.sampleId,
       createdAt: capture.createdAt,
       qualityStatus: capture.quality?.status ?? "",
@@ -156,6 +160,7 @@ function pushMetadataRows(
     projectId: string;
     sessionId: string;
     sampleId: string;
+    repetition: string;
     name: string;
     createdAt: string;
     qualityStatus?: string;
@@ -173,6 +178,7 @@ function pushMetadataRows(
       item.projectId,
       item.sessionId,
       item.sampleId,
+      item.repetition,
       item.name,
       item.createdAt,
       item.qualityStatus ?? "",

@@ -53,7 +53,7 @@ import { buildSpectrumEnvelope } from "@/domain/spectrum";
 import { summarizeDatasetQuality, type DatasetQualitySummary } from "@/runtime/datasetQuality";
 import { PortableNirs4allInferenceEngine } from "@/runtime/inference";
 import { LocalQualityEngine } from "@/runtime/quality";
-import { nextSampleId } from "@/runtime/sampleIds";
+import { nextRepetitionId, nextSampleId } from "@/runtime/sampleIds";
 import { summarizeSpectrum } from "@/runtime/spectrumStats";
 import { CaptureStore } from "@/storage/captureStore";
 import { buildExport, exportTextFile, type ExportKind } from "@/storage/export";
@@ -142,6 +142,8 @@ export default function App() {
   const [configs, setConfigs] = useState<ScanConfiguration[]>([]);
   const [configId, setConfigId] = useState("0");
   const [sampleId, setSampleId] = useState("sample-001");
+  const [repeatSample, setRepeatSample] = useState(false);
+  const [repetitionId, setRepetitionId] = useState("1");
   const [saveToDevice, setSaveToDevice] = useState(false);
   const [progress, setProgress] = useState<ScanProgress | null>(null);
   const [captures, setCaptures] = useState<SpectrumCapture[]>([]);
@@ -456,6 +458,7 @@ export default function App() {
           operator: selectedSession?.metadata?.operator ?? selectedProject?.metadata?.operator ?? "",
           location: selectedSession?.metadata?.location ?? selectedProject?.metadata?.location ?? "",
           ...nextCaptureMetadata,
+          repetition: repetitionId,
         }),
         quality,
       };
@@ -472,7 +475,7 @@ export default function App() {
       setNextCaptureMetadata((prev) => ({ ...prev, observation: "", sample_label: "", lot: "" }));
       return capture;
     },
-    [nextCaptureMetadata, selectedPipeline, selectedProject, selectedSession],
+    [nextCaptureMetadata, repetitionId, selectedPipeline, selectedProject, selectedSession],
   );
 
   const runScan = useCallback(async () => {
@@ -483,7 +486,12 @@ export default function App() {
       await device.setActiveConfiguration(configId);
       const rawCapture = await device.startScan({ saveToDevice, sampleId }, setProgress);
       await saveCompletedCapture(rawCapture);
-      setSampleId((current) => nextSampleId(current));
+      if (repeatSample) {
+        setRepetitionId((current) => nextRepetitionId(current));
+      } else {
+        setSampleId((current) => nextSampleId(current));
+        setRepetitionId("1");
+      }
       setView("scan");
     } catch (err) {
       setError(formatError(err));
@@ -491,7 +499,7 @@ export default function App() {
       setProgress(null);
       setState("connected");
     }
-  }, [configId, device, sampleId, saveToDevice, saveCompletedCapture]);
+  }, [configId, device, repeatSample, sampleId, saveToDevice, saveCompletedCapture]);
 
   const loadStored = useCallback(
     async (index: number) => {
@@ -757,9 +765,34 @@ export default function App() {
                   />
                   <div className="select-action sample-id-action">
                     <Field label="Sample ID">
-                      <input value={sampleId} onChange={(event) => setSampleId(event.target.value)} />
+                      <input
+                        value={sampleId}
+                        onChange={(event) => {
+                          setSampleId(event.target.value);
+                          if (!repeatSample) setRepetitionId("1");
+                        }}
+                      />
                     </Field>
-                    <button className="icon-button context-add" title="Next sample ID" onClick={() => setSampleId((current) => nextSampleId(current))}>
+                    <button
+                      className="icon-button context-add"
+                      title="Next sample ID"
+                      onClick={() => {
+                        setSampleId((current) => nextSampleId(current));
+                        setRepetitionId("1");
+                      }}
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
+                  <label className="switch-line">
+                    <input type="checkbox" checked={repeatSample} onChange={(event) => setRepeatSample(event.target.checked)} />
+                    <span>Repeat sample</span>
+                  </label>
+                  <div className="select-action">
+                    <Field label="Repetition">
+                      <input value={repetitionId} onChange={(event) => setRepetitionId(event.target.value)} />
+                    </Field>
+                    <button className="icon-button context-add" title="Next repetition" onClick={() => setRepetitionId((current) => nextRepetitionId(current))}>
                       <Plus size={16} />
                     </button>
                   </div>
@@ -1045,7 +1078,7 @@ function BatchCaptureTable({
           onClick={() => onSelect(capture.id)}
           onDoubleClick={() => onInspect(capture.id)}
         >
-          <strong>{capture.sampleId}</strong>
+          <strong>{formatCaptureLabel(capture)}</strong>
           <span>{capture.quality?.status ?? "no QC"}</span>
           <span>{capture.prediction ? formatNumber(capture.prediction.value) : "no prediction"}</span>
           <Maximize2 size={15} />
@@ -1207,6 +1240,7 @@ function SpectrumView({
     return <EmptyState text={capture?.rawPayloadBase64 ? "Raw Nano payload captured." : "No decoded spectrum selected."} />;
   }
   const { axis, values } = capture.spectrum;
+  const repetition = captureRepetition(capture);
   const overlayValues = overlays.flatMap((overlay) => [...overlay.lower, ...overlay.median, ...overlay.upper]).filter(Number.isFinite);
   const minY = Math.min(...values, ...overlayValues);
   const maxY = Math.max(...values, ...overlayValues);
@@ -1250,6 +1284,7 @@ function SpectrumView({
       </svg>
       <div className="spectrum-meta">
         <span>{axis[0]?.toFixed(0)}-{axis.at(-1)?.toFixed(0)} {capture.spectrum.axisUnit}</span>
+        {repetition && <span>rep {repetition}</span>}
         <span>{values.length} bands</span>
         <span>{capture.spectrum.signalType}</span>
         {overlays.map((overlay) => (
@@ -1320,10 +1355,10 @@ function SpectrumDetailDialog({
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose();
     }}>
-      <section className="spectrum-dialog" role="dialog" aria-modal="true" aria-label={`Spectrum ${capture.sampleId}`}>
+      <section className="spectrum-dialog" role="dialog" aria-modal="true" aria-label={`Spectrum ${formatCaptureLabel(capture)}`}>
         <div className="dialog-header">
           <div>
-            <strong>{capture.sampleId}</strong>
+            <strong>{formatCaptureLabel(capture)}</strong>
             <span>{new Date(capture.createdAt).toLocaleString()}</span>
           </div>
           <button className="icon-button" title="Close" onClick={onClose}>
@@ -1433,7 +1468,7 @@ function CaptureList({
       {captures.map((capture) => (
         <div key={capture.id} className={capture.id === selectedId ? "capture-row active" : "capture-row"}>
           <button onClick={() => onSelect(capture.id)}>
-            <strong>{capture.sampleId}</strong>
+            <strong>{formatCaptureLabel(capture)}</strong>
             <span>{new Date(capture.createdAt).toLocaleString()}</span>
             <span>{capture.spectrum ? `${capture.spectrum.values.length} bands` : "raw payload"} - {capture.quality?.status ?? "no QC"}</span>
           </button>
@@ -1555,6 +1590,15 @@ function formatNullable(value: number | null): string {
 
 function formatMetadataKey(key: string): string {
   return key.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function captureRepetition(capture: SpectrumCapture): string {
+  return capture.metadata?.repetition?.trim() ?? "";
+}
+
+function formatCaptureLabel(capture: SpectrumCapture): string {
+  const repetition = captureRepetition(capture);
+  return repetition ? `${capture.sampleId} rep ${repetition}` : capture.sampleId;
 }
 
 function formatPercent(value: number): string {

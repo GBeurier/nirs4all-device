@@ -29,12 +29,14 @@ describe("exports", () => {
   });
 
   it("builds a metadata CSV", () => {
-    const capture = { ...makeSimulatedCapture("s1"), metadata: { observation: "leaf ok" } };
+    const capture = { ...makeSimulatedCapture("s1"), metadata: { observation: "leaf ok", repetition: "2" } };
     const file = buildExport([capture], "metadata-csv", {
       project: { id: "project-1", name: "Field", createdAt: "2026-01-01T00:00:00.000Z", metadata: { operator: "Ada" } },
     });
     expect(file.filename.endsWith(".csv")).toBe(true);
-    expect(file.text.split("\n")[0]).toContain("record_type,record_id,project_id");
+    expect(file.text.split("\n")[0]).toContain("record_type,record_id,project_id,session_id,sample_id,repetition");
+    expect(file.text).toContain("capture,");
+    expect(file.text).toContain(",s1,2,s1,");
     expect(file.text).toContain("operator,Ada");
     expect(file.text).toContain("observation,leaf ok");
   });

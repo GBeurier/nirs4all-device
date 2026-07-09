@@ -9,6 +9,7 @@ full workflow can be exercised without hardware.
 - Connect to a NIRS device through a device adapter (`SpectrometerDevice`).
 - Organize captures by project and session so field batches stay separated.
 - Start scans, show spectra when numeric data is available, and store captures locally.
+- Run repeated scans for the same sample by incrementing `metadata.repetition` instead of `sample_id`.
 - Render the current scan with project/session q10-q90 quantile envelopes behind it.
 - Preserve raw DLP NIRscan Nano payloads and decode them on Android when the TI/KST Spectrum C AAR
   is present.
