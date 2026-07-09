@@ -25,6 +25,7 @@ const CONFIGS: ScanConfiguration[] = [
 export class SimulatedNirscanNanoDevice implements SpectrometerDevice {
   readonly descriptor = SIM_DESCRIPTOR;
   #active = CONFIGS[0].id;
+  #scanIndex = 0;
 
   async connect(): Promise<DeviceStatus> {
     await delay(220);
@@ -72,7 +73,8 @@ export class SimulatedNirscanNanoDevice implements SpectrometerDevice {
       onProgress?.(progress);
       await delay(180);
     }
-    const capture = makeSimulatedCapture(options.sampleId, config, options.saveToDevice ? ["saved"] : []);
+    this.#scanIndex += 1;
+    const capture = makeSimulatedCapture(options.sampleId, config, options.saveToDevice ? ["saved"] : [], this.#scanIndex);
     onProgress?.({ phase: "done", pct: 100 });
     return capture;
   }
@@ -89,7 +91,7 @@ export class SimulatedNirscanNanoDevice implements SpectrometerDevice {
   }
 }
 
-export function makeSimulatedCapture(sampleId = "sample-001", config = CONFIGS[0], extraTags: string[] = []): SpectrumCapture {
+export function makeSimulatedCapture(sampleId = "sample-001", config = CONFIGS[0], extraTags: string[] = [], scanIndex = 0): SpectrumCapture {
   const spectrum = simulatedSpectrum(config);
   return {
     id: makeCaptureId("sim"),
@@ -99,21 +101,37 @@ export function makeSimulatedCapture(sampleId = "sample-001", config = CONFIGS[0
     device: SIM_DESCRIPTOR,
     configuration: config,
     spectrum,
-    tags: ["simulated", ...extraTags],
+    tags: ["simulated", scanIndex > 0 ? `sim-${scanIndex}` : "", ...extraTags].filter(Boolean),
   };
 }
 
 function simulatedSpectrum(config: ScanConfiguration): Spectrum {
   const n = Math.max(120, config.numPatterns ?? 180);
   const axis = Array.from({ length: n }, (_, i) => config.wavelengthStartNm + (i * (config.wavelengthEndNm - config.wavelengthStartNm)) / (n - 1));
-  const seed = Math.random() * 0.08;
+  const seed = Math.random() * Math.PI * 2;
+  const scatter = 0.94 + Math.random() * 0.14;
+  const baselineOffset = (Math.random() - 0.5) * 0.045;
+  const slope = (Math.random() - 0.5) * 0.055;
+  const waterDepth = 0.095 + Math.random() * 0.06;
+  const proteinDepth = 0.045 + Math.random() * 0.045;
+  const starchDepth = 0.03 + Math.random() * 0.04;
+  const waterCenter = 1450 + (Math.random() - 0.5) * 8;
+  const proteinCenter = 1210 + (Math.random() - 0.5) * 6;
+  const starchCenter = 1660 + (Math.random() - 0.5) * 6;
+  const lowFrequencyRipple = (Math.random() - 0.5) * 0.018;
+  const noiseAmplitude = 0.0035 + Math.random() * 0.0045;
+  const mid = (config.wavelengthStartNm + config.wavelengthEndNm) / 2;
+  const span = Math.max(1, config.wavelengthEndNm - config.wavelengthStartNm);
   const values = axis.map((x, i) => {
-    const baseline = 0.42 + 0.08 * Math.sin((x - 900) / 120);
-    const water = -0.12 * gaussian(x, 1450, 55);
-    const protein = -0.07 * gaussian(x, 1210, 40);
-    const starch = -0.05 * gaussian(x, 1660, 35);
-    const noise = Math.sin(i * 1.7 + seed) * 0.003 + (Math.random() - 0.5) * 0.002;
-    return round6(baseline + water + protein + starch + noise);
+    const xNorm = (x - mid) / span;
+    const baseline = 0.42 + 0.08 * Math.sin((x - 900) / 120) + baselineOffset + slope * xNorm;
+    const water = -waterDepth * gaussian(x, waterCenter, 55);
+    const protein = -proteinDepth * gaussian(x, proteinCenter, 40);
+    const starch = -starchDepth * gaussian(x, starchCenter, 35);
+    const ripple = lowFrequencyRipple * Math.sin((x - config.wavelengthStartNm) / 80 + seed);
+    const detectorTexture = Math.sin(i * 1.7 + seed) * 0.0025;
+    const noise = detectorTexture + (Math.random() - 0.5) * noiseAmplitude;
+    return round6((baseline + water + protein + starch + ripple) * scatter + noise);
   });
   return { axis: axis.map((x) => Math.round(x * 100) / 100), values, axisUnit: "nm", signalType: "reflectance" };
 }

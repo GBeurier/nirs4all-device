@@ -345,6 +345,12 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .progress-track div { height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--brand-teal), var(--brand-teal-l)); }
 
 .spectrum-view { display: grid; gap: 10px; min-height: 300px; }
+.spectrum-view.interactive { cursor: zoom-in; }
+.spectrum-view.interactive:focus-visible {
+  outline: 2px solid var(--brand-teal);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
 .spectrum-view svg {
   width: 100%;
   min-height: 260px;
@@ -453,6 +459,52 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .pipeline-context span, .pipeline-context small { color: var(--muted-foreground); font-size: 12px; }
 
 .dataset-quality { display: grid; gap: 12px; }
+.batch-overview { display: grid; gap: 12px; }
+.segmented-control {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  background: var(--muted);
+}
+.segmented-control button {
+  min-height: 36px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-weight: 800;
+}
+.segmented-control button.active {
+  border-color: color-mix(in oklab, var(--brand-teal) 34%, var(--border));
+  background: var(--card);
+  color: var(--brand-teal-d);
+}
+.batch-summary-strip, .spectrum-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+.spectrum-stats.compact .metric-card strong { font-size: 20px; }
+.batch-capture-table { display: grid; gap: 6px; }
+.batch-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(74px, 0.5fr) minmax(94px, 0.6fr) 24px;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 10px;
+  background: var(--card);
+  color: var(--foreground);
+  text-align: left;
+}
+.batch-row.active { border-color: var(--brand-teal); }
+.batch-row span { color: var(--muted-foreground); font-size: 12px; font-weight: 700; }
+.batch-row svg { color: var(--muted-foreground); }
 .dataset-metrics {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -492,6 +544,43 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   font-size: 12px;
   font-weight: 800;
 }
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(15, 23, 42, 0.44);
+}
+.spectrum-dialog {
+  width: min(1180px, 100%);
+  max-height: min(880px, calc(100vh - 32px));
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  background: var(--card);
+  box-shadow: 0 28px 60px -24px rgba(15, 23, 42, 0.55);
+}
+.dialog-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.dialog-header div { display: grid; gap: 2px; }
+.dialog-header span { color: var(--muted-foreground); font-size: 12px; font-weight: 700; }
+.dialog-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.75fr);
+  gap: 12px;
+  align-items: start;
+}
+.dialog-main, .dialog-side { display: grid; gap: 12px; min-width: 0; }
+.detail-meta { border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: color-mix(in oklab, var(--muted) 62%, var(--card)); }
 
 .empty-state {
   display: grid;
@@ -551,6 +640,9 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   .brand-copy span { display: none; }
   .transport-grid, .device-option-grid { grid-template-columns: 1fr; }
   .quality-view, .quality-view.compact { grid-template-columns: 1fr; }
+  .dialog-grid { grid-template-columns: 1fr; }
+  .batch-row { grid-template-columns: minmax(0, 1fr) 70px 24px; }
+  .batch-row span:nth-of-type(2) { display: none; }
   .compact-toolbar .ghost-button { flex: 1 1 145px; }
 }
 
@@ -558,4 +650,6 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   .select-action { grid-template-columns: minmax(0, 1fr); }
   .context-add { width: 100%; }
   .topbar-status { display: none; }
+  .segmented-control { grid-template-columns: 1fr; }
+  .modal-backdrop { padding: 8px; }
 }

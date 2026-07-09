@@ -48,7 +48,7 @@ export class CapacitorBleTransport implements BleTransport {
 
   async #init(): Promise<void> {
     if (this.#initialized) return;
-    await BleClient.initialize();
+    await BleClient.initialize({ androidNeverForLocation: true });
     this.#initialized = true;
   }
 }

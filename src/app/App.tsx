@@ -1,5 +1,6 @@
 import {
   Activity,
+  BarChart3,
   Battery,
   Bluetooth,
   CheckCircle2,
@@ -14,6 +15,7 @@ import {
   Info,
   Layers3,
   Loader2,
+  Maximize2,
   Play,
   Plus,
   RadioTower,
@@ -26,7 +28,7 @@ import {
   XCircle,
   type LucideIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Capacitor } from "@capacitor/core";
 import { brand } from "nirs4all-ui";
 import { CapacitorBleTransport } from "@/device/capacitorBleTransport";
@@ -52,10 +54,12 @@ import { summarizeDatasetQuality, type DatasetQualitySummary } from "@/runtime/d
 import { PortableNirs4allInferenceEngine } from "@/runtime/inference";
 import { LocalQualityEngine } from "@/runtime/quality";
 import { nextSampleId } from "@/runtime/sampleIds";
+import { summarizeSpectrum } from "@/runtime/spectrumStats";
 import { CaptureStore } from "@/storage/captureStore";
 import { buildExport, exportTextFile, type ExportKind } from "@/storage/export";
 
 type ViewId = "projects" | "connection" | "scan";
+type BatchScope = "project" | "session";
 
 type MetadataField = {
   key: string;
@@ -149,6 +153,8 @@ export default function App() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(INITIAL_PROJECT.id);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(INITIAL_SESSION.id);
   const [nextCaptureMetadata, setNextCaptureMetadata] = useState<Record<string, string>>({});
+  const [overviewScope, setOverviewScope] = useState<BatchScope>("project");
+  const [inspectedCaptureId, setInspectedCaptureId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -218,6 +224,12 @@ export default function App() {
     () => summarizeDatasetQuality(projectCaptures, projectSessions),
     [projectCaptures, projectSessions],
   );
+  const sessionQuality = useMemo(
+    () => summarizeDatasetQuality(sessionCaptures, selectedSession ? [selectedSession] : []),
+    [selectedSession, sessionCaptures],
+  );
+  const overviewCaptures = overviewScope === "session" ? sessionCaptures : projectCaptures;
+  const overviewQuality = overviewScope === "session" ? sessionQuality : datasetQuality;
   const projectEnvelope = useMemo(
     () => buildOverlay(projectCaptures.filter((capture) => capture.id !== selectedCapture?.id), selectedCapture, "Project"),
     [projectCaptures, selectedCapture],
@@ -227,6 +239,17 @@ export default function App() {
     [sessionCaptures, selectedCapture],
   );
   const spectrumOverlays = [projectEnvelope, sessionEnvelope].filter(Boolean) as SpectrumEnvelope[];
+  const inspectedCapture = inspectedCaptureId ? projectCaptures.find((capture) => capture.id === inspectedCaptureId) ?? null : null;
+  const inspectedSessionCaptures = projectCaptures.filter((capture) => capture.sessionId === inspectedCapture?.sessionId);
+  const inspectedProjectEnvelope = useMemo(
+    () => buildOverlay(projectCaptures.filter((capture) => capture.id !== inspectedCapture?.id), inspectedCapture, "Project"),
+    [projectCaptures, inspectedCapture],
+  );
+  const inspectedSessionEnvelope = useMemo(
+    () => buildOverlay(inspectedSessionCaptures.filter((capture) => capture.id !== inspectedCapture?.id), inspectedCapture, "Session"),
+    [inspectedCapture, inspectedSessionCaptures],
+  );
+  const inspectedOverlays = [inspectedProjectEnvelope, inspectedSessionEnvelope].filter(Boolean) as SpectrumEnvelope[];
   const logo = useMemo(
     () => brand.generateNirs4allBrandSvg("nirs4all", { variant: "icon", title: "nirs4all Device" }),
     [],
@@ -322,6 +345,18 @@ export default function App() {
       setSelectedPipelineId(nextProject?.activePipelineId ?? pipelines.find((pipeline) => !pipeline.projectId || pipeline.projectId === id)?.id ?? null);
     },
     [captures, pipelines, projects, sessions],
+  );
+
+  const selectSession = useCallback(
+    (id: string) => {
+      setSelectedSessionId(id);
+      setSelectedCaptureId((prev) =>
+        captures.some((capture) => capture.id === prev && capture.sessionId === id)
+          ? prev
+          : captures.find((capture) => capture.sessionId === id)?.id ?? null,
+      );
+    },
+    [captures],
   );
 
   const createNewProject = useCallback(async () => {
@@ -589,7 +624,7 @@ export default function App() {
                     selectedProjectId={selectedProject?.id ?? ""}
                     selectedSessionId={selectedSession?.id ?? ""}
                     onProjectChange={selectProject}
-                    onSessionChange={setSelectedSessionId}
+                    onSessionChange={selectSession}
                     onNewProject={createNewProject}
                     onNewSession={createNewSession}
                   />
@@ -624,6 +659,21 @@ export default function App() {
               <div className="project-main">
                 <Panel title="Dataset Quality" icon={Gauge} wide>
                   <DatasetQualityView summary={datasetQuality} />
+                </Panel>
+
+                <Panel title="Dataset View" icon={BarChart3} wide>
+                  <BatchOverview
+                    scope={overviewScope}
+                    summary={overviewQuality}
+                    captures={overviewCaptures}
+                    selectedId={selectedCapture?.id ?? null}
+                    onScopeChange={setOverviewScope}
+                    onSelect={(id) => setSelectedCaptureId(id)}
+                    onInspect={(id) => {
+                      setSelectedCaptureId(id);
+                      setInspectedCaptureId(id);
+                    }}
+                  />
                 </Panel>
 
                 <Panel title="Export" icon={Download}>
@@ -701,7 +751,7 @@ export default function App() {
                     selectedProjectId={selectedProject?.id ?? ""}
                     selectedSessionId={selectedSession?.id ?? ""}
                     onProjectChange={selectProject}
-                    onSessionChange={setSelectedSessionId}
+                    onSessionChange={selectSession}
                     onNewProject={createNewProject}
                     onNewSession={createNewSession}
                   />
@@ -745,7 +795,11 @@ export default function App() {
 
               <div className="scan-results-column">
                 <Panel title="Spectrum" icon={Activity} wide>
-                  <SpectrumView capture={selectedCapture} overlays={spectrumOverlays} />
+                  <SpectrumView
+                    capture={selectedCapture}
+                    overlays={spectrumOverlays}
+                    onInspect={selectedCapture ? () => setInspectedCaptureId(selectedCapture.id) : undefined}
+                  />
                 </Panel>
                 <Panel title="Quality Metrics" icon={Gauge} wide>
                   <QualityView report={selectedCapture?.quality ?? null} />
@@ -768,6 +822,13 @@ export default function App() {
           )}
         </main>
       </div>
+      {inspectedCapture && (
+        <SpectrumDetailDialog
+          capture={inspectedCapture}
+          overlays={inspectedOverlays}
+          onClose={() => setInspectedCaptureId(null)}
+        />
+      )}
     </div>
   );
 }
@@ -915,6 +976,85 @@ function SessionList({ sessions, selectedId, onSelect }: { sessions: CaptureSess
   );
 }
 
+function BatchOverview({
+  scope,
+  summary,
+  captures,
+  selectedId,
+  onScopeChange,
+  onSelect,
+  onInspect,
+}: {
+  scope: BatchScope;
+  summary: DatasetQualitySummary;
+  captures: SpectrumCapture[];
+  selectedId: string | null;
+  onScopeChange: (scope: BatchScope) => void;
+  onSelect: (id: string) => void;
+  onInspect: (id: string) => void;
+}) {
+  const target =
+    captures.find((capture) => capture.id === selectedId && capture.spectrum) ??
+    captures.find((capture) => capture.spectrum) ??
+    captures[0] ??
+    null;
+  const overlay = target?.spectrum
+    ? buildSpectrumEnvelope(captures.filter((capture) => capture.id !== target.id), target.spectrum.axis, scope === "session" ? "Session" : "Project")
+    : null;
+  const overlays = overlay ? [overlay] : [];
+  return (
+    <div className="batch-overview">
+      <div className="segmented-control" role="tablist" aria-label="Dataset scope">
+        <button className={scope === "project" ? "active" : ""} onClick={() => onScopeChange("project")}>
+          Project dataset
+        </button>
+        <button className={scope === "session" ? "active" : ""} onClick={() => onScopeChange("session")}>
+          Active session
+        </button>
+      </div>
+      <div className="batch-summary-strip">
+        <MetricCard label="Captures" value={String(summary.captureCount)} detail={`${summary.decodedCount} decoded`} />
+        <MetricCard label="QC median" value={summary.medianScore == null ? "n/a" : summary.medianScore.toFixed(0)} detail={`${summary.passCount}/${summary.warnCount}/${summary.failCount} pass/warn/fail`} />
+        <MetricCard label="Predicted" value={formatPercent(summary.predictionCoverage)} detail={`${summary.predictionCount} captures`} />
+      </div>
+      <SpectrumView capture={target} overlays={overlays} onInspect={target ? () => onInspect(target.id) : undefined} />
+      <SpectrumStatsView capture={target} compact />
+      <BatchCaptureTable captures={captures} selectedId={target?.id ?? selectedId} onSelect={onSelect} onInspect={onInspect} />
+    </div>
+  );
+}
+
+function BatchCaptureTable({
+  captures,
+  selectedId,
+  onSelect,
+  onInspect,
+}: {
+  captures: SpectrumCapture[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  onInspect: (id: string) => void;
+}) {
+  if (captures.length === 0) return <EmptyState text="No captures in this scope." />;
+  return (
+    <div className="batch-capture-table">
+      {captures.slice(0, 8).map((capture) => (
+        <button
+          key={capture.id}
+          className={capture.id === selectedId ? "batch-row active" : "batch-row"}
+          onClick={() => onSelect(capture.id)}
+          onDoubleClick={() => onInspect(capture.id)}
+        >
+          <strong>{capture.sampleId}</strong>
+          <span>{capture.quality?.status ?? "no QC"}</span>
+          <span>{capture.prediction ? formatNumber(capture.prediction.value) : "no prediction"}</span>
+          <Maximize2 size={15} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function DatasetQualityView({ summary }: { summary: DatasetQualitySummary }) {
   const decodedPct = summary.captureCount === 0 ? 0 : summary.decodedCount / summary.captureCount;
   return (
@@ -1054,7 +1194,15 @@ function ProgressBar({ progress }: { progress: ScanProgress }) {
   );
 }
 
-function SpectrumView({ capture, overlays = [] }: { capture: SpectrumCapture | null; overlays?: SpectrumEnvelope[] }) {
+function SpectrumView({
+  capture,
+  overlays = [],
+  onInspect,
+}: {
+  capture: SpectrumCapture | null;
+  overlays?: SpectrumEnvelope[];
+  onInspect?: () => void;
+}) {
   if (!capture?.spectrum) {
     return <EmptyState text={capture?.rawPayloadBase64 ? "Raw Nano payload captured." : "No decoded spectrum selected."} />;
   }
@@ -1068,8 +1216,23 @@ function SpectrumView({ capture, overlays = [] }: { capture: SpectrumCapture | n
     return `${x.toFixed(3)},${y.toFixed(3)}`;
   };
   const points = values.map(point).join(" ");
+  const interactive = Boolean(onInspect);
+  const inspect = () => onInspect?.();
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!interactive) return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      inspect();
+    }
+  };
   return (
-    <div className="spectrum-view">
+    <div
+      className={interactive ? "spectrum-view interactive" : "spectrum-view"}
+      role={interactive ? "button" : undefined}
+      tabIndex={interactive ? 0 : undefined}
+      onClick={interactive ? inspect : undefined}
+      onKeyDown={interactive ? onKeyDown : undefined}
+    >
       <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Spectrum">
         {overlays.map((overlay) => {
           const cls = overlay.label.toLowerCase();
@@ -1090,8 +1253,9 @@ function SpectrumView({ capture, overlays = [] }: { capture: SpectrumCapture | n
         <span>{values.length} bands</span>
         <span>{capture.spectrum.signalType}</span>
         {overlays.map((overlay) => (
-          <span key={overlay.label}>{overlay.label} q10-q90</span>
+          <span key={overlay.label}>{overlay.label} q10-q90{overlay.count ? ` n=${overlay.count}` : ""}</span>
         ))}
+        {interactive && <span>Inspect</span>}
       </div>
     </div>
   );
@@ -1122,6 +1286,83 @@ function QualityView({ report }: { report: QualityReport | null }) {
         )}
       </div>
     </div>
+  );
+}
+
+function SpectrumStatsView({ capture, compact = false }: { capture: SpectrumCapture | null; compact?: boolean }) {
+  const stats = summarizeSpectrum(capture);
+  if (!stats) return <EmptyState text="No spectrum statistics available." />;
+  const rows: Array<{ label: string; value: string; detail: string }> = [
+    { label: "Bands", value: String(stats.bands), detail: `${formatPercent(stats.finiteShare)} finite` },
+    { label: "Mean", value: formatNullable(stats.mean), detail: "reflectance" },
+    { label: "Std dev", value: formatNullable(stats.std), detail: "sample spread" },
+    { label: "Range", value: formatNullable(stats.range), detail: `${formatNullable(stats.min)} to ${formatNullable(stats.max)}` },
+  ];
+  return (
+    <div className={compact ? "spectrum-stats compact" : "spectrum-stats"}>
+      {rows.map((row) => (
+        <MetricCard key={row.label} label={row.label} value={row.value} detail={row.detail} />
+      ))}
+    </div>
+  );
+}
+
+function SpectrumDetailDialog({
+  capture,
+  overlays,
+  onClose,
+}: {
+  capture: SpectrumCapture;
+  overlays: SpectrumEnvelope[];
+  onClose: () => void;
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onClose();
+    }}>
+      <section className="spectrum-dialog" role="dialog" aria-modal="true" aria-label={`Spectrum ${capture.sampleId}`}>
+        <div className="dialog-header">
+          <div>
+            <strong>{capture.sampleId}</strong>
+            <span>{new Date(capture.createdAt).toLocaleString()}</span>
+          </div>
+          <button className="icon-button" title="Close" onClick={onClose}>
+            <XCircle size={17} />
+          </button>
+        </div>
+        <div className="dialog-grid">
+          <div className="dialog-main">
+            <SpectrumView capture={capture} overlays={overlays} />
+            <SpectrumStatsView capture={capture} />
+          </div>
+          <div className="dialog-side">
+            <QualityView report={capture.quality ?? null} />
+            <CaptureDetailMeta capture={capture} />
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function CaptureDetailMeta({ capture }: { capture: SpectrumCapture }) {
+  const rows = [
+    ["Device", capture.device.name],
+    ["Configuration", capture.configuration?.name ?? "n/a"],
+    ["Source", capture.source],
+    ["Signal", capture.spectrum?.signalType ?? "raw"],
+    ["Prediction", capture.prediction ? `${capture.prediction.pipelineName}: ${formatNumber(capture.prediction.value)}` : "n/a"],
+    ...Object.entries(capture.metadata ?? {}).map(([key, value]) => [formatMetadataKey(key), value] as [string, string]),
+  ];
+  return (
+    <dl className="status-grid detail-meta">
+      {rows.map(([label, value]) => (
+        <div key={label}>
+          <dt>{label}</dt>
+          <dd>{value}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
@@ -1306,6 +1547,14 @@ function formatNumber(value: number): string {
   if (Math.abs(value) >= 100) return value.toFixed(1);
   if (Math.abs(value) >= 1) return value.toFixed(3);
   return value.toExponential(2);
+}
+
+function formatNullable(value: number | null): string {
+  return value == null ? "n/a" : formatNumber(value);
+}
+
+function formatMetadataKey(key: string): string {
+  return key.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function formatPercent(value: number): string {

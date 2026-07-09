@@ -75,6 +75,27 @@ The current hardware adapters are:
 - `ble`: DLP NIRscan Nano through native Capacitor BLE, or Web Bluetooth where the browser supports it.
 - `usb`: reserved adapter slot for future WebUSB/WebHID or native USB/OTG support.
 
+## Installable builds
+
+Android is the first installable target. The checked-in Capacitor Android project builds a debug APK
+that can be sideloaded on phones/tablets for field testing:
+
+```bash
+npm run build
+npm run cap:sync
+cd android
+./gradlew assembleDebug
+```
+
+GitHub Actions also publishes this APK as the `nirs4all-device-android-debug-apk` artifact from the
+`Android APK` workflow on every push to `main` and on manual dispatch. This debug APK is installable
+but not a store/release artifact.
+
+iOS support is checked in as a Capacitor Xcode project under `ios/` with the BLE plugin wired and the
+required Bluetooth permission strings. Producing an installable `.ipa` for iPhone/iPad still requires
+macOS/Xcode plus Apple signing assets (`DEVELOPMENT_TEAM`, certificate, provisioning profile). Until
+those signing secrets exist in CI, iOS is buildable from Xcode but not automatically distributed.
+
 ## Development
 
 ```bash

@@ -66,6 +66,7 @@ export interface SpectrumEnvelope {
   lower: number[];
   median: number[];
   upper: number[];
+  count?: number;
 }
 
 export interface SpectrumCapture {

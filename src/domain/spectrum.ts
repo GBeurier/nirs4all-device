@@ -65,7 +65,7 @@ export function buildSpectrumEnvelope(
   upperQ = 0.9,
 ): SpectrumEnvelope | null {
   const spectra = captures.filter((capture) => capture.spectrum) as Array<SpectrumCapture & { spectrum: Spectrum }>;
-  if (spectra.length < 2 || targetAxis.length === 0) return null;
+  if (spectra.length < 1 || targetAxis.length === 0) return null;
   const aligned = spectra.map((capture) => interpolateSpectrum(capture.spectrum, targetAxis).values);
   const lower: number[] = [];
   const median: number[] = [];
@@ -82,7 +82,7 @@ export function buildSpectrumEnvelope(
       upper.push(quantile(values, upperQ));
     }
   }
-  return { label, axis: targetAxis, lower, median, upper };
+  return { label, axis: targetAxis, lower, median, upper, count: spectra.length };
 }
 
 function interpolatePoint(axis: number[], values: number[], x: number): number {

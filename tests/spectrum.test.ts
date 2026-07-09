@@ -16,5 +16,25 @@ describe("spectrum envelopes", () => {
     expect(envelope?.lower).toEqual([1, 2, 3]);
     expect(envelope?.median).toEqual([2, 4, 6]);
     expect(envelope?.upper).toEqual([3, 6, 9]);
+    expect(envelope?.count).toBe(3);
+  });
+
+  it("keeps an overlay available when only one previous spectrum exists", () => {
+    const a = makeSimulatedCapture("a");
+    a.spectrum = { axis: [1, 2, 3], values: [1, 2, 3], axisUnit: "nm", signalType: "reflectance" };
+
+    const envelope = buildSpectrumEnvelope([a], [1, 2, 3], "Session");
+
+    expect(envelope?.lower).toEqual([1, 2, 3]);
+    expect(envelope?.median).toEqual([1, 2, 3]);
+    expect(envelope?.upper).toEqual([1, 2, 3]);
+    expect(envelope?.count).toBe(1);
+  });
+
+  it("generates varied simulator spectra", () => {
+    const a = makeSimulatedCapture("a");
+    const b = makeSimulatedCapture("b");
+
+    expect(a.spectrum?.values).not.toEqual(b.spectrum?.values);
   });
 });
