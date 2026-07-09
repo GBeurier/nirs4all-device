@@ -18,9 +18,24 @@ describe("exports", () => {
   });
 
   it("builds a JSON bundle", () => {
-    const file = buildExport([makeSimulatedCapture("s1")], "json");
+    const file = buildExport([makeSimulatedCapture("s1")], "json", {
+      project: { id: "project-1", name: "Field", createdAt: "2026-01-01T00:00:00.000Z" },
+      sessions: [{ id: "session-1", projectId: "project-1", name: "Morning", createdAt: "2026-01-01T00:00:00.000Z" }],
+      pipelines: [],
+    });
     const parsed = JSON.parse(file.text) as { schema: string; captures: unknown[] };
-    expect(parsed.schema).toBe("nirs4all-device.captures.v1");
+    expect(parsed.schema).toBe("nirs4all-device.project.v1");
     expect(parsed.captures).toHaveLength(1);
+  });
+
+  it("builds a metadata CSV", () => {
+    const capture = { ...makeSimulatedCapture("s1"), metadata: { observation: "leaf ok" } };
+    const file = buildExport([capture], "metadata-csv", {
+      project: { id: "project-1", name: "Field", createdAt: "2026-01-01T00:00:00.000Z", metadata: { operator: "Ada" } },
+    });
+    expect(file.filename.endsWith(".csv")).toBe(true);
+    expect(file.text.split("\n")[0]).toContain("record_type,record_id,project_id");
+    expect(file.text).toContain("operator,Ada");
+    expect(file.text).toContain("observation,leaf ok");
   });
 });

@@ -40,6 +40,7 @@ export interface Project {
   id: string;
   name: string;
   createdAt: string;
+  metadata?: Record<string, string>;
   activePipelineId?: string;
 }
 
@@ -48,6 +49,7 @@ export interface CaptureSession {
   projectId: string;
   name: string;
   createdAt: string;
+  metadata?: Record<string, string>;
   closedAt?: string;
 }
 
@@ -79,6 +81,7 @@ export interface SpectrumCapture {
   rawPayloadBase64?: string;
   quality?: QualityReport;
   prediction?: PredictionResult;
+  metadata?: Record<string, string>;
   notes?: string;
   tags: string[];
 }

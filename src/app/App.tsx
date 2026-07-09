@@ -2,8 +2,8 @@ import {
   Activity,
   Battery,
   Bluetooth,
-  Cable,
   CheckCircle2,
+  ClipboardList,
   Cpu,
   Database,
   Download,
@@ -19,40 +19,58 @@ import {
   RadioTower,
   Save,
   ScanLine,
-  Settings2,
   Sparkles,
   Trash2,
   Upload,
   Usb,
   XCircle,
+  type LucideIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Capacitor } from "@capacitor/core";
 import { brand } from "nirs4all-ui";
 import { CapacitorBleTransport } from "@/device/capacitorBleTransport";
 import { DlpNirscanNanoDevice } from "@/device/nano/nanoDevice";
 import { SimulatedNirscanNanoDevice } from "@/device/simulatedDevice";
 import { BrowserUsbTransport } from "@/device/webUsbTransport";
 import type {
+  CaptureSession,
   DeviceConnectionState,
   DeviceStatus,
-  CaptureSession,
   PipelineArtifact,
   Project,
   QualityReport,
   ScanConfiguration,
   ScanProgress,
-  SpectrumEnvelope,
-  SpectrumCapture,
   SpectrometerDevice,
+  SpectrumCapture,
+  SpectrumEnvelope,
   TransportKind,
 } from "@/domain/types";
-import { buildExport, exportTextFile } from "@/storage/export";
-import { CaptureStore } from "@/storage/captureStore";
-import { LocalQualityEngine } from "@/runtime/quality";
-import { PortableNirs4allInferenceEngine } from "@/runtime/inference";
 import { buildSpectrumEnvelope } from "@/domain/spectrum";
+import { summarizeDatasetQuality, type DatasetQualitySummary } from "@/runtime/datasetQuality";
+import { PortableNirs4allInferenceEngine } from "@/runtime/inference";
+import { LocalQualityEngine } from "@/runtime/quality";
+import { nextSampleId } from "@/runtime/sampleIds";
+import { CaptureStore } from "@/storage/captureStore";
+import { buildExport, exportTextFile, type ExportKind } from "@/storage/export";
 
-type ViewId = "connect" | "capture" | "quality" | "predict" | "library";
+type ViewId = "projects" | "connection" | "scan";
+
+type MetadataField = {
+  key: string;
+  label: string;
+  multiline?: boolean;
+};
+
+type DeviceOption = {
+  transport: TransportKind;
+  title: string;
+  description: string;
+  icon: LucideIcon;
+  enabled: boolean;
+  badge: string;
+};
 
 const store = new CaptureStore();
 const qualityEngine = new LocalQualityEngine();
@@ -61,16 +79,58 @@ const ACTIVE_PROJECT_KEY = "nirs4all-device.activeProjectId";
 const ACTIVE_SESSION_KEY = "nirs4all-device.activeSessionId";
 const ACTIVE_PIPELINE_KEY = "nirs4all-device.activePipelineId";
 
-const views: Array<{ id: ViewId; label: string; icon: typeof RadioTower }> = [
-  { id: "connect", label: "Connect", icon: RadioTower },
-  { id: "capture", label: "Capture", icon: ScanLine },
-  { id: "quality", label: "Quality", icon: Gauge },
-  { id: "predict", label: "Predict", icon: Sparkles },
-  { id: "library", label: "Library", icon: Database },
+const views: Array<{ id: ViewId; label: string; icon: LucideIcon }> = [
+  { id: "projects", label: "Projects", icon: Database },
+  { id: "connection", label: "Connection", icon: RadioTower },
+  { id: "scan", label: "Scan", icon: ScanLine },
 ];
 
+const projectMetadataFields: MetadataField[] = [
+  { key: "description", label: "Description", multiline: true },
+  { key: "operator", label: "Default operator" },
+  { key: "location", label: "Location" },
+  { key: "protocol", label: "Protocol" },
+  { key: "notes", label: "Notes", multiline: true },
+];
+
+const sessionMetadataFields: MetadataField[] = [
+  { key: "operator", label: "Operator" },
+  { key: "location", label: "Location" },
+  { key: "sample_set", label: "Sample set" },
+  { key: "notes", label: "Notes", multiline: true },
+];
+
+const captureMetadataFields: MetadataField[] = [
+  { key: "observation", label: "Observation", multiline: true },
+  { key: "sample_label", label: "Sample label" },
+  { key: "lot", label: "Lot" },
+  { key: "operator", label: "Operator" },
+  { key: "notes", label: "Notes", multiline: true },
+];
+
+const nextCaptureMetadataFields: MetadataField[] = [
+  { key: "observation", label: "Observation", multiline: true },
+  { key: "sample_label", label: "Sample label" },
+  { key: "lot", label: "Lot" },
+];
+
+const INITIAL_PROJECT: Project = {
+  id: "project_field_default",
+  name: "Field project",
+  createdAt: new Date().toISOString(),
+  metadata: {},
+};
+
+const INITIAL_SESSION: CaptureSession = {
+  id: "session_field_default_1",
+  projectId: INITIAL_PROJECT.id,
+  name: "Session 1",
+  createdAt: INITIAL_PROJECT.createdAt,
+  metadata: {},
+};
+
 export default function App() {
-  const [view, setView] = useState<ViewId>("connect");
+  const [view, setView] = useState<ViewId>("projects");
   const [transport, setTransport] = useState<TransportKind>("simulator");
   const [state, setState] = useState<DeviceConnectionState>("idle");
   const [device, setDevice] = useState<SpectrometerDevice | null>(null);
@@ -84,14 +144,15 @@ export default function App() {
   const [selectedCaptureId, setSelectedCaptureId] = useState<string | null>(null);
   const [pipelines, setPipelines] = useState<PipelineArtifact[]>([]);
   const [selectedPipelineId, setSelectedPipelineId] = useState<string | null>(null);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [sessions, setSessions] = useState<CaptureSession[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [projects, setProjects] = useState<Project[]>([INITIAL_PROJECT]);
+  const [sessions, setSessions] = useState<CaptureSession[]>([INITIAL_SESSION]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(INITIAL_PROJECT.id);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(INITIAL_SESSION.id);
+  const [nextCaptureMetadata, setNextCaptureMetadata] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void refreshStore();
+    void refreshStore().catch((err) => setError(formatError(err)));
   }, []);
 
   useEffect(() => {
@@ -106,32 +167,66 @@ export default function App() {
     if (selectedPipelineId) localStorage.setItem(ACTIVE_PIPELINE_KEY, selectedPipelineId);
   }, [selectedPipelineId]);
 
+  const isNativeShell = Capacitor.isNativePlatform();
+  const webBluetoothAvailable = isWebBluetoothAvailable();
+  const deviceOptions = useMemo<DeviceOption[]>(
+    () => [
+      {
+        transport: "simulator",
+        title: "Simulator",
+        description: "Runs the full workflow without hardware.",
+        icon: Cpu,
+        enabled: true,
+        badge: "available",
+      },
+      {
+        transport: "ble",
+        title: "DLP NIRscan Nano",
+        description: isNativeShell ? "Native BLE through Capacitor." : "Bluetooth LE through Web Bluetooth when the browser supports it.",
+        icon: Bluetooth,
+        enabled: isNativeShell || webBluetoothAvailable,
+        badge: isNativeShell ? "native" : webBluetoothAvailable ? "web ble" : "unsupported",
+      },
+      {
+        transport: "usb",
+        title: "USB spectrometer",
+        description: "Adapter slot for future WebUSB/WebHID or native USB support.",
+        icon: Usb,
+        enabled: false,
+        badge: "planned",
+      },
+    ],
+    [isNativeShell, webBluetoothAvailable],
+  );
+
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? projects[0] ?? null;
   const projectSessions = sessions.filter((session) => session.projectId === selectedProject?.id);
   const selectedSession = projectSessions.find((session) => session.id === selectedSessionId) ?? projectSessions[0] ?? null;
-  const scopedCaptures = captures.filter((capture) => !selectedProject || capture.projectId === selectedProject.id || !capture.projectId);
-  const selectedCapture = scopedCaptures.find((capture) => capture.id === selectedCaptureId) ?? scopedCaptures[0] ?? null;
+  const projectCaptures = captures.filter((capture) => !selectedProject || capture.projectId === selectedProject.id || !capture.projectId);
+  const sessionCaptures = projectCaptures.filter((capture) => capture.sessionId === selectedSession?.id);
+  const selectedCapture = projectCaptures.find((capture) => capture.id === selectedCaptureId) ?? projectCaptures[0] ?? null;
   const projectPipelines = pipelines.filter((pipeline) => !selectedProject || !pipeline.projectId || pipeline.projectId === selectedProject.id);
   const selectedPipeline =
     projectPipelines.find((pipeline) => pipeline.id === selectedPipelineId) ??
     projectPipelines.find((pipeline) => pipeline.id === selectedProject?.activePipelineId) ??
     projectPipelines[0] ??
     null;
+  const selectedDeviceOption = deviceOptions.find((option) => option.transport === transport) ?? deviceOptions[0];
+  const connected = state === "connected" || state === "busy";
+  const canConnect = selectedDeviceOption.enabled && state !== "connecting" && state !== "busy";
+  const datasetQuality = useMemo(
+    () => summarizeDatasetQuality(projectCaptures, projectSessions),
+    [projectCaptures, projectSessions],
+  );
   const projectEnvelope = useMemo(
-    () => buildOverlay(scopedCaptures.filter((capture) => capture.id !== selectedCapture?.id), selectedCapture, "Project"),
-    [scopedCaptures, selectedCapture],
+    () => buildOverlay(projectCaptures.filter((capture) => capture.id !== selectedCapture?.id), selectedCapture, "Project"),
+    [projectCaptures, selectedCapture],
   );
   const sessionEnvelope = useMemo(
-    () =>
-      buildOverlay(
-        scopedCaptures.filter((capture) => capture.sessionId === selectedSession?.id && capture.id !== selectedCapture?.id),
-        selectedCapture,
-        "Session",
-      ),
-    [scopedCaptures, selectedCapture, selectedSession?.id],
+    () => buildOverlay(sessionCaptures.filter((capture) => capture.id !== selectedCapture?.id), selectedCapture, "Session"),
+    [sessionCaptures, selectedCapture],
   );
   const spectrumOverlays = [projectEnvelope, sessionEnvelope].filter(Boolean) as SpectrumEnvelope[];
-  const connected = state === "connected" || state === "busy";
   const logo = useMemo(
     () => brand.generateNirs4allBrandSvg("nirs4all", { variant: "icon", title: "nirs4all Device" }),
     [],
@@ -145,12 +240,12 @@ export default function App() {
       store.listSessions(),
     ]);
     if (storedProjects.length === 0) {
-      const project = createProject("Field project");
+      const project = INITIAL_PROJECT;
       await store.saveProject(project);
       storedProjects = [project];
     }
     if (storedSessions.filter((session) => session.projectId === storedProjects[0].id).length === 0) {
-      const session = createSession(storedProjects[0].id, "Session 1");
+      const session = storedProjects[0].id === INITIAL_PROJECT.id ? INITIAL_SESSION : createSession(storedProjects[0].id, "Session 1");
       await store.saveSession(session);
       storedSessions = [session, ...storedSessions];
     }
@@ -168,7 +263,14 @@ export default function App() {
     setSelectedProjectId(projectId);
     setSelectedSessionId(sessionId);
     setSelectedCaptureId((prev) => prev ?? storedCaptures.find((capture) => capture.projectId === projectId)?.id ?? storedCaptures[0]?.id ?? null);
-    setSelectedPipelineId((prev) => prev ?? localStorage.getItem(ACTIVE_PIPELINE_KEY) ?? storedProjects.find((project) => project.id === projectId)?.activePipelineId ?? storedPipelines[0]?.id ?? null);
+    setSelectedPipelineId(
+      (prev) =>
+        prev ??
+        localStorage.getItem(ACTIVE_PIPELINE_KEY) ??
+        storedProjects.find((project) => project.id === projectId)?.activePipelineId ??
+        storedPipelines[0]?.id ??
+        null,
+    );
   }
 
   const connect = useCallback(async () => {
@@ -179,10 +281,13 @@ export default function App() {
       if (transport === "simulator") {
         nextDevice = new SimulatedNirscanNanoDevice();
       } else if (transport === "ble") {
+        if (!isNativeShell && !webBluetoothAvailable) {
+          throw new Error("Web Bluetooth is not available in this browser. Use Chrome/Edge on HTTPS or the native Capacitor app for mobile BLE.");
+        }
         nextDevice = await DlpNirscanNanoDevice.request(new CapacitorBleTransport());
       } else {
         const usb = new BrowserUsbTransport();
-        throw new Error(usb.explainUnavailable() ?? "USB HID transport is detected but the native Nano adapter is not enabled in this build.");
+        throw new Error(usb.explainUnavailable() ?? "USB spectrometer support is an adapter slot in this build.");
       }
       const nextStatus = await nextDevice.connect();
       const nextConfigs = await nextDevice.listConfigurations();
@@ -191,12 +296,12 @@ export default function App() {
       setConfigs(nextConfigs);
       setConfigId(nextConfigs.find((config) => config.active)?.id ?? nextConfigs[0]?.id ?? "0");
       setState("connected");
-      setView("capture");
+      setView("scan");
     } catch (err) {
       setState("error");
       setError(formatError(err));
     }
-  }, [transport]);
+  }, [isNativeShell, transport, webBluetoothAvailable]);
 
   const disconnect = useCallback(async () => {
     await device?.disconnect();
@@ -204,17 +309,20 @@ export default function App() {
     setStatus(null);
     setConfigs([]);
     setState("idle");
-    setView("connect");
+    setView("connection");
   }, [device]);
 
-  const selectProject = useCallback((id: string) => {
-    const nextProject = projects.find((project) => project.id === id);
-    const nextSession = sessions.find((session) => session.projectId === id) ?? null;
-    setSelectedProjectId(id);
-    setSelectedSessionId(nextSession?.id ?? null);
-    setSelectedCaptureId(captures.find((capture) => capture.projectId === id)?.id ?? null);
-    setSelectedPipelineId(nextProject?.activePipelineId ?? pipelines.find((pipeline) => !pipeline.projectId || pipeline.projectId === id)?.id ?? null);
-  }, [captures, pipelines, projects, sessions]);
+  const selectProject = useCallback(
+    (id: string) => {
+      const nextProject = projects.find((project) => project.id === id);
+      const nextSession = sessions.find((session) => session.projectId === id) ?? null;
+      setSelectedProjectId(id);
+      setSelectedSessionId(nextSession?.id ?? null);
+      setSelectedCaptureId(captures.find((capture) => capture.projectId === id)?.id ?? null);
+      setSelectedPipelineId(nextProject?.activePipelineId ?? pipelines.find((pipeline) => !pipeline.projectId || pipeline.projectId === id)?.id ?? null);
+    },
+    [captures, pipelines, projects, sessions],
+  );
 
   const createNewProject = useCallback(async () => {
     const name = window.prompt("Project name", `Project ${projects.length + 1}`)?.trim();
@@ -228,6 +336,7 @@ export default function App() {
     setSelectedSessionId(session.id);
     setSelectedCaptureId(null);
     setSelectedPipelineId(null);
+    setView("projects");
   }, [projects.length]);
 
   const createNewSession = useCallback(async () => {
@@ -235,41 +344,101 @@ export default function App() {
     const count = sessions.filter((session) => session.projectId === selectedProject.id).length + 1;
     const name = window.prompt("Session name", `Session ${count}`)?.trim();
     if (!name) return;
-    const session = createSession(selectedProject.id, name);
+    const session = createSession(selectedProject.id, name, selectedProject.metadata?.operator);
     await store.saveSession(session);
     setSessions((prev) => [session, ...prev]);
     setSelectedSessionId(session.id);
     setSelectedCaptureId(null);
   }, [selectedProject, sessions]);
 
-  const selectPipeline = useCallback(async (id: string) => {
-    setSelectedPipelineId(id);
-    if (!selectedProject) return;
-    const project = { ...selectedProject, activePipelineId: id };
-    await store.saveProject(project);
-    setProjects((prev) => prev.map((item) => (item.id === project.id ? project : item)));
-  }, [selectedProject]);
+  const updateProject = useCallback(
+    async (patch: Partial<Project>) => {
+      if (!selectedProject) return;
+      const project = { ...selectedProject, ...patch };
+      await store.saveProject(project);
+      setProjects((prev) => prev.map((item) => (item.id === project.id ? project : item)));
+    },
+    [selectedProject],
+  );
 
-  const saveCompletedCapture = useCallback(async (rawCapture: SpectrumCapture): Promise<SpectrumCapture> => {
-    const quality = await qualityEngine.evaluate(rawCapture);
-    let capture: SpectrumCapture = {
-      ...rawCapture,
-      projectId: selectedProject?.id,
-      sessionId: selectedSession?.id,
-      quality,
-    };
-    if (selectedPipeline?.runnable) {
-      try {
-        capture = { ...capture, prediction: await inferenceEngine.predict(capture, selectedPipeline) };
-      } catch (err) {
-        setError(`Capture saved; prediction skipped: ${formatError(err)}`);
+  const updateProjectMetadata = useCallback(
+    async (key: string, value: string) => {
+      if (!selectedProject) return;
+      const metadata = cleanMetadata({ ...selectedProject.metadata, [key]: value });
+      await updateProject({ metadata });
+    },
+    [selectedProject, updateProject],
+  );
+
+  const updateSession = useCallback(
+    async (patch: Partial<CaptureSession>) => {
+      if (!selectedSession) return;
+      const session = { ...selectedSession, ...patch };
+      await store.saveSession(session);
+      setSessions((prev) => prev.map((item) => (item.id === session.id ? session : item)));
+    },
+    [selectedSession],
+  );
+
+  const updateSessionMetadata = useCallback(
+    async (key: string, value: string) => {
+      if (!selectedSession) return;
+      const metadata = cleanMetadata({ ...selectedSession.metadata, [key]: value });
+      await updateSession({ metadata });
+    },
+    [selectedSession, updateSession],
+  );
+
+  const updateSelectedCaptureMetadata = useCallback(
+    async (key: string, value: string) => {
+      if (!selectedCapture) return;
+      const capture = { ...selectedCapture, metadata: cleanMetadata({ ...selectedCapture.metadata, [key]: value }) };
+      await store.saveCapture(capture);
+      setCaptures((prev) => prev.map((item) => (item.id === capture.id ? capture : item)));
+    },
+    [selectedCapture],
+  );
+
+  const selectPipeline = useCallback(
+    async (id: string) => {
+      setSelectedPipelineId(id);
+      if (!selectedProject) return;
+      const project = { ...selectedProject, activePipelineId: id };
+      await store.saveProject(project);
+      setProjects((prev) => prev.map((item) => (item.id === project.id ? project : item)));
+    },
+    [selectedProject],
+  );
+
+  const saveCompletedCapture = useCallback(
+    async (rawCapture: SpectrumCapture): Promise<SpectrumCapture> => {
+      const quality = await qualityEngine.evaluate(rawCapture);
+      let capture: SpectrumCapture = {
+        ...rawCapture,
+        projectId: selectedProject?.id,
+        sessionId: selectedSession?.id,
+        metadata: cleanMetadata({
+          operator: selectedSession?.metadata?.operator ?? selectedProject?.metadata?.operator ?? "",
+          location: selectedSession?.metadata?.location ?? selectedProject?.metadata?.location ?? "",
+          ...nextCaptureMetadata,
+        }),
+        quality,
+      };
+      if (selectedPipeline?.runnable) {
+        try {
+          capture = { ...capture, prediction: await inferenceEngine.predict(capture, selectedPipeline) };
+        } catch (err) {
+          setError(`Capture saved; prediction skipped: ${formatError(err)}`);
+        }
       }
-    }
-    await store.saveCapture(capture);
-    setCaptures((prev) => [capture, ...prev.filter((item) => item.id !== capture.id)]);
-    setSelectedCaptureId(capture.id);
-    return capture;
-  }, [selectedPipeline, selectedProject?.id, selectedSession?.id]);
+      await store.saveCapture(capture);
+      setCaptures((prev) => [capture, ...prev.filter((item) => item.id !== capture.id)]);
+      setSelectedCaptureId(capture.id);
+      setNextCaptureMetadata((prev) => ({ ...prev, observation: "", sample_label: "", lot: "" }));
+      return capture;
+    },
+    [nextCaptureMetadata, selectedPipeline, selectedProject, selectedSession],
+  );
 
   const runScan = useCallback(async () => {
     if (!device) return;
@@ -279,7 +448,8 @@ export default function App() {
       await device.setActiveConfiguration(configId);
       const rawCapture = await device.startScan({ saveToDevice, sampleId }, setProgress);
       await saveCompletedCapture(rawCapture);
-      setView("capture");
+      setSampleId((current) => nextSampleId(current));
+      setView("scan");
     } catch (err) {
       setError(formatError(err));
     } finally {
@@ -288,43 +458,49 @@ export default function App() {
     }
   }, [configId, device, sampleId, saveToDevice, saveCompletedCapture]);
 
-  const loadStored = useCallback(async (index: number) => {
-    if (!device) return;
-    setState("busy");
-    setError(null);
-    try {
-      const rawCapture = await device.readStoredScan(index, setProgress);
-      await saveCompletedCapture(rawCapture);
-      setView("library");
-    } catch (err) {
-      setError(formatError(err));
-    } finally {
-      setProgress(null);
-      setState("connected");
-    }
-  }, [device, saveCompletedCapture]);
-
-  const importPipeline = useCallback(async (file: File) => {
-    setError(null);
-    try {
-      const artifact = { ...inferenceEngine.importArtifact(await file.text(), file.name), projectId: selectedProject?.id };
-      await store.savePipeline(artifact);
-      if (selectedProject) {
-        const project = { ...selectedProject, activePipelineId: artifact.id };
-        await store.saveProject(project);
-        setProjects((prev) => prev.map((item) => (item.id === project.id ? project : item)));
+  const loadStored = useCallback(
+    async (index: number) => {
+      if (!device) return;
+      setState("busy");
+      setError(null);
+      try {
+        const rawCapture = await device.readStoredScan(index, setProgress);
+        await saveCompletedCapture(rawCapture);
+        setView("scan");
+      } catch (err) {
+        setError(formatError(err));
+      } finally {
+        setProgress(null);
+        setState("connected");
       }
-      setPipelines((prev) => [artifact, ...prev.filter((item) => item.id !== artifact.id)]);
-      setSelectedPipelineId(artifact.id);
-    } catch (err) {
-      setError(formatError(err));
-    }
-  }, [selectedProject]);
+    },
+    [device, saveCompletedCapture],
+  );
+
+  const importPipeline = useCallback(
+    async (file: File) => {
+      setError(null);
+      try {
+        const artifact = { ...inferenceEngine.importArtifact(await file.text(), file.name), projectId: selectedProject?.id };
+        await store.savePipeline(artifact);
+        if (selectedProject) {
+          const project = { ...selectedProject, activePipelineId: artifact.id };
+          await store.saveProject(project);
+          setProjects((prev) => prev.map((item) => (item.id === project.id ? project : item)));
+        }
+        setPipelines((prev) => [artifact, ...prev.filter((item) => item.id !== artifact.id)]);
+        setSelectedPipelineId(artifact.id);
+      } catch (err) {
+        setError(formatError(err));
+      }
+    },
+    [selectedProject],
+  );
 
   const fitDemoPipeline = useCallback(async () => {
     setError(null);
     try {
-      const artifact = { ...(await inferenceEngine.fitDemoArtifact(scopedCaptures)), projectId: selectedProject?.id };
+      const artifact = { ...(await inferenceEngine.fitDemoArtifact(projectCaptures)), projectId: selectedProject?.id };
       await store.savePipeline(artifact);
       if (selectedProject) {
         const project = { ...selectedProject, activePipelineId: artifact.id };
@@ -336,7 +512,7 @@ export default function App() {
     } catch (err) {
       setError(formatError(err));
     }
-  }, [scopedCaptures, selectedProject]);
+  }, [projectCaptures, selectedProject]);
 
   const predict = useCallback(async () => {
     if (!selectedCapture || !selectedPipeline) return;
@@ -358,10 +534,13 @@ export default function App() {
     setSelectedCaptureId((prev) => (prev === id ? null : prev));
   }, []);
 
-  const exportCaptures = useCallback(async (kind: "single-csv" | "matrix-csv" | "json") => {
-    const target = kind === "single-csv" && selectedCapture ? [selectedCapture] : scopedCaptures;
-    await exportTextFile(buildExport(target, kind));
-  }, [scopedCaptures, selectedCapture]);
+  const exportProject = useCallback(
+    async (kind: ExportKind) => {
+      const target = kind === "single-csv" && selectedCapture ? [selectedCapture] : projectCaptures;
+      await exportTextFile(buildExport(target, kind, { project: selectedProject, sessions: projectSessions, pipelines: projectPipelines }));
+    },
+    [projectCaptures, projectPipelines, projectSessions, selectedCapture, selectedProject],
+  );
 
   return (
     <div className="app-shell">
@@ -400,16 +579,93 @@ export default function App() {
             </div>
           )}
 
-          {view === "connect" && (
-            <section className="screen-grid connect-screen">
+          {view === "projects" && (
+            <section className="projects-page">
+              <div className="project-column">
+                <Panel title="Project" icon={Layers3}>
+                  <ProjectSessionPanel
+                    projects={projects}
+                    sessions={projectSessions}
+                    selectedProjectId={selectedProject?.id ?? ""}
+                    selectedSessionId={selectedSession?.id ?? ""}
+                    onProjectChange={selectProject}
+                    onSessionChange={setSelectedSessionId}
+                    onNewProject={createNewProject}
+                    onNewSession={createNewSession}
+                  />
+                  <Field label="Project name">
+                    <input value={selectedProject?.name ?? ""} onChange={(event) => void updateProject({ name: event.target.value })} />
+                  </Field>
+                  <MetadataFields values={selectedProject?.metadata ?? {}} fields={projectMetadataFields} onChange={(key, value) => void updateProjectMetadata(key, value)} />
+                </Panel>
+
+                <Panel title="Sessions" icon={ClipboardList}>
+                  <button className="primary-button full" onClick={createNewSession} disabled={!selectedProject}>
+                    <Plus size={17} />
+                    Add session
+                  </button>
+                  <SessionList sessions={projectSessions} selectedId={selectedSession?.id ?? null} onSelect={setSelectedSessionId} />
+                  <Field label="Session name">
+                    <input value={selectedSession?.name ?? ""} onChange={(event) => void updateSession({ name: event.target.value })} />
+                  </Field>
+                  <MetadataFields values={selectedSession?.metadata ?? {}} fields={sessionMetadataFields} onChange={(key, value) => void updateSessionMetadata(key, value)} />
+                </Panel>
+
+                <Panel title="Models" icon={Sparkles}>
+                  <FileImportButton label="Load .n4a model" onFile={importPipeline} />
+                  <button className="ghost-button full" onClick={fitDemoPipeline} disabled={projectCaptures.filter((capture) => capture.spectrum).length < 4}>
+                    <FlaskConical size={17} />
+                    Fit demo from captures
+                  </button>
+                  <PipelineList pipelines={projectPipelines} selectedId={selectedPipeline?.id ?? null} onSelect={(id) => void selectPipeline(id)} />
+                </Panel>
+              </div>
+
+              <div className="project-main">
+                <Panel title="Dataset Quality" icon={Gauge} wide>
+                  <DatasetQualityView summary={datasetQuality} />
+                </Panel>
+
+                <Panel title="Export" icon={Download}>
+                  <div className="toolbar compact-toolbar">
+                    <button className="ghost-button" onClick={() => void exportProject("single-csv")} disabled={!selectedCapture}>
+                      <Download size={17} />
+                      Spectrum CSV
+                    </button>
+                    <button className="ghost-button" onClick={() => void exportProject("matrix-csv")} disabled={projectCaptures.length === 0}>
+                      <Save size={17} />
+                      Matrix CSV
+                    </button>
+                    <button className="ghost-button" onClick={() => void exportProject("metadata-csv")} disabled={!selectedProject}>
+                      <ClipboardList size={17} />
+                      Metadata CSV
+                    </button>
+                    <button className="ghost-button" onClick={() => void exportProject("json")} disabled={!selectedProject}>
+                      <FileJson size={17} />
+                      Project JSON
+                    </button>
+                  </div>
+                </Panel>
+
+                <Panel title="Captures" icon={Database} wide>
+                  <CaptureList captures={projectCaptures} selectedId={selectedCapture?.id ?? null} onSelect={setSelectedCaptureId} onDelete={removeCapture} />
+                </Panel>
+              </div>
+            </section>
+          )}
+
+          {view === "connection" && (
+            <section className="connection-page">
               <Panel title="Device" icon={RadioTower}>
-                <div className="transport-grid">
-                  <TransportButton active={transport === "simulator"} icon={Cpu} title="Simulator" onClick={() => setTransport("simulator")} />
-                  <TransportButton active={transport === "ble"} icon={Bluetooth} title="Bluetooth LE" onClick={() => setTransport("ble")} />
-                  <TransportButton active={transport === "usb"} icon={Usb} title="USB/HID" onClick={() => setTransport("usb")} />
-                </div>
+                <DeviceOptionGrid options={deviceOptions} selected={transport} onSelect={setTransport} />
+                {!isNativeShell && !webBluetoothAvailable && (
+                  <div className="compat-note">
+                    <Info size={16} />
+                    <span>Web Bluetooth is not exposed by this browser. Use the simulator here, Chrome/Edge over HTTPS for web BLE, or the native app on mobile.</span>
+                  </div>
+                )}
                 <div className="button-row">
-                  <button className="primary-button" onClick={connect} disabled={state === "connecting" || state === "busy"}>
+                  <button className="primary-button" onClick={connect} disabled={!canConnect}>
                     {state === "connecting" ? <Loader2 className="spin" size={18} /> : <RadioTower size={18} />}
                     Connect
                   </button>
@@ -421,16 +677,24 @@ export default function App() {
                 </div>
               </Panel>
 
+              <Panel title="Device Status" icon={Info}>
+                <DeviceStatusView status={status} />
+              </Panel>
+
+              <Panel title="Stored Scans" icon={HardDrive}>
+                <StoredScans device={device} onLoad={loadStored} />
+              </Panel>
+
               <Panel title="Runtime" icon={Cpu}>
-                <RuntimeStack />
+                <RuntimeStack nativeShell={isNativeShell} webBluetoothAvailable={webBluetoothAvailable} />
               </Panel>
             </section>
           )}
 
-          {view === "capture" && (
-            <section className="capture-workbench">
-              <div className="control-column">
-                <Panel title="Context" icon={Layers3}>
+          {view === "scan" && (
+            <section className="scan-page">
+              <div className="scan-control-column">
+                <Panel title="Capture" icon={ScanLine}>
                   <ProjectSessionPanel
                     projects={projects}
                     sessions={projectSessions}
@@ -441,116 +705,65 @@ export default function App() {
                     onNewProject={createNewProject}
                     onNewSession={createNewSession}
                   />
-                </Panel>
-                <Panel title="Scan Control" icon={ScanLine}>
-                  <Field label="Sample ID">
-                    <input value={sampleId} onChange={(event) => setSampleId(event.target.value)} />
-                  </Field>
+                  <div className="select-action sample-id-action">
+                    <Field label="Sample ID">
+                      <input value={sampleId} onChange={(event) => setSampleId(event.target.value)} />
+                    </Field>
+                    <button className="icon-button context-add" title="Next sample ID" onClick={() => setSampleId((current) => nextSampleId(current))}>
+                      <Plus size={16} />
+                    </button>
+                  </div>
                   <Field label="Configuration">
-                    <select value={configId} onChange={(event) => setConfigId(event.target.value)}>
-                      {configs.map((config) => (
-                        <option key={config.id} value={config.id}>
-                          {config.name}
-                        </option>
-                      ))}
+                    <select value={configId} onChange={(event) => setConfigId(event.target.value)} disabled={configs.length === 0}>
+                      {configs.length === 0 ? (
+                        <option value="0">Connect a device first</option>
+                      ) : (
+                        configs.map((config) => (
+                          <option key={config.id} value={config.id}>
+                            {config.name}
+                          </option>
+                        ))
+                      )}
                     </select>
                   </Field>
                   <label className="switch-line">
                     <input type="checkbox" checked={saveToDevice} onChange={(event) => setSaveToDevice(event.target.checked)} />
                     <span>Save on device SD</span>
                   </label>
+                  <MetadataFields values={nextCaptureMetadata} fields={nextCaptureMetadataFields} onChange={(key, value) => setNextCaptureMetadata((prev) => ({ ...prev, [key]: value }))} />
                   <button className="primary-button scan-button" disabled={!connected || state === "busy" || !selectedSession} onClick={runScan}>
                     {state === "busy" ? <Loader2 className="spin" size={18} /> : <Play size={18} />}
                     Start scan
                   </button>
                   {progress && <ProgressBar progress={progress} />}
                 </Panel>
-                <Panel title="Pipeline" icon={Sparkles}>
-                  <FileImportButton label="Load .n4a" onFile={importPipeline} />
+
+                <Panel title="Model Context" icon={Sparkles}>
                   <PipelineContext artifact={selectedPipeline} />
-                </Panel>
-                <Panel title="Device Status" icon={Info}>
-                  <DeviceStatusView status={status} />
                 </Panel>
               </div>
 
-              <div className="capture-stack">
+              <div className="scan-results-column">
                 <Panel title="Spectrum" icon={Activity} wide>
                   <SpectrumView capture={selectedCapture} overlays={spectrumOverlays} />
                 </Panel>
-                <div className="analysis-grid">
-                  <Panel title="Quality Gate" icon={Gauge}>
-                    <QualityView report={selectedCapture?.quality ?? null} compact />
-                  </Panel>
-                  <Panel title="Prediction" icon={Sparkles}>
-                    <PredictionPanel capture={selectedCapture} artifact={selectedPipeline} onPredict={predict} />
-                  </Panel>
-                </div>
-              </div>
-            </section>
-          )}
-
-          {view === "quality" && (
-            <section className="screen-grid quality-screen">
-              <Panel title="Quality Gate" icon={Gauge} wide>
-                <QualityView report={selectedCapture?.quality ?? null} />
-              </Panel>
-              <Panel title="Capture" icon={FileJson}>
-                <CaptureMeta capture={selectedCapture} />
-              </Panel>
-            </section>
-          )}
-
-          {view === "predict" && (
-            <section className="screen-grid predict-screen">
-              <Panel title="Pipeline" icon={Sparkles}>
-                <FileImportButton label="Import .n4a JSON" onFile={importPipeline} />
-                <button className="ghost-button full" onClick={fitDemoPipeline}>
-                  <FlaskConical size={17} />
-                  Fit demo from captures
-                </button>
-                <PipelineList pipelines={projectPipelines} selectedId={selectedPipeline?.id ?? null} onSelect={(id) => void selectPipeline(id)} />
-              </Panel>
-              <Panel title="Inference" icon={Cpu} wide>
-                <SpectrumView capture={selectedCapture} overlays={spectrumOverlays} />
-                <div className="button-row">
-                  <button className="primary-button" disabled={!selectedCapture?.spectrum || !selectedPipeline?.runnable} onClick={predict}>
-                    <Sparkles size={18} />
-                    Predict
-                  </button>
-                  {selectedCapture?.prediction && (
-                    <div className="prediction-result">
-                      <span>{selectedCapture.prediction.pipelineName}</span>
-                      <strong>{formatNumber(selectedCapture.prediction.value)}</strong>
-                    </div>
+                <Panel title="Quality Metrics" icon={Gauge} wide>
+                  <QualityView report={selectedCapture?.quality ?? null} />
+                </Panel>
+                <Panel title="Prediction" icon={Sparkles} wide>
+                  <PredictionPanel capture={selectedCapture} artifact={selectedPipeline} onPredict={predict} />
+                </Panel>
+                <Panel title="Capture Metadata" icon={ClipboardList} wide>
+                  {selectedCapture ? (
+                    <MetadataFields values={selectedCapture.metadata ?? {}} fields={captureMetadataFields} onChange={(key, value) => void updateSelectedCaptureMetadata(key, value)} />
+                  ) : (
+                    <EmptyState text="No capture selected." />
                   )}
-                </div>
-              </Panel>
-            </section>
-          )}
-
-          {view === "library" && (
-            <section className="screen-grid library-screen">
-              <Panel title="Captures" icon={Database} wide>
-                <div className="toolbar">
-                  <button className="ghost-button" onClick={() => exportCaptures("single-csv")} disabled={!selectedCapture}>
-                    <Download size={17} />
-                    CSV
-                  </button>
-                  <button className="ghost-button" onClick={() => exportCaptures("matrix-csv")} disabled={scopedCaptures.length === 0}>
-                    <Save size={17} />
-                    Matrix CSV
-                  </button>
-                  <button className="ghost-button" onClick={() => exportCaptures("json")} disabled={scopedCaptures.length === 0}>
-                    <FileJson size={17} />
-                    JSON
-                  </button>
-                </div>
-                <CaptureList captures={scopedCaptures} selectedId={selectedCapture?.id ?? null} onSelect={setSelectedCaptureId} onDelete={removeCapture} />
-              </Panel>
-              <Panel title="Stored Scans" icon={HardDrive}>
-                <StoredScans device={device} onLoad={loadStored} />
-              </Panel>
+                </Panel>
+                <Panel title="Session Captures" icon={Database} wide>
+                  <CaptureList captures={sessionCaptures} selectedId={selectedCapture?.id ?? null} onSelect={setSelectedCaptureId} onDelete={removeCapture} />
+                </Panel>
+              </div>
             </section>
           )}
         </main>
@@ -559,7 +772,7 @@ export default function App() {
   );
 }
 
-function Panel({ title, icon: Icon, wide = false, children }: { title: string; icon: typeof RadioTower; wide?: boolean; children: React.ReactNode }) {
+function Panel({ title, icon: Icon, wide = false, children }: { title: string; icon: LucideIcon; wide?: boolean; children: ReactNode }) {
   return (
     <section className={wide ? "panel wide" : "panel"}>
       <div className="panel-header">
@@ -571,7 +784,7 @@ function Panel({ title, icon: Icon, wide = false, children }: { title: string; i
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="field">
       <span>{label}</span>
@@ -580,12 +793,34 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function TransportButton({ active, icon: Icon, title, onClick }: { active: boolean; icon: typeof Bluetooth; title: string; onClick: () => void }) {
+function DeviceOptionGrid({
+  options,
+  selected,
+  onSelect,
+}: {
+  options: DeviceOption[];
+  selected: TransportKind;
+  onSelect: (transport: TransportKind) => void;
+}) {
   return (
-    <button className={active ? "transport-button active" : "transport-button"} onClick={onClick}>
-      <Icon size={22} />
-      <span>{title}</span>
-    </button>
+    <div className="device-option-grid">
+      {options.map((option) => {
+        const Icon = option.icon;
+        return (
+          <button
+            key={option.transport}
+            className={selected === option.transport ? "device-option active" : "device-option"}
+            onClick={() => onSelect(option.transport)}
+            disabled={!option.enabled}
+          >
+            <Icon size={22} />
+            <strong>{option.title}</strong>
+            <span>{option.description}</span>
+            <small>{option.badge}</small>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -614,7 +849,9 @@ function ProjectSessionPanel({
         <Field label="Project">
           <select value={selectedProjectId} onChange={(event) => onProjectChange(event.target.value)}>
             {projects.map((project) => (
-              <option key={project.id} value={project.id}>{project.name}</option>
+              <option key={project.id} value={project.id}>
+                {project.name || "Untitled project"}
+              </option>
             ))}
           </select>
         </Field>
@@ -626,7 +863,9 @@ function ProjectSessionPanel({
         <Field label="Session">
           <select value={selectedSessionId} onChange={(event) => onSessionChange(event.target.value)}>
             {sessions.map((session) => (
-              <option key={session.id} value={session.id}>{session.name}</option>
+              <option key={session.id} value={session.id}>
+                {session.name || "Untitled session"}
+              </option>
             ))}
           </select>
         </Field>
@@ -638,12 +877,105 @@ function ProjectSessionPanel({
   );
 }
 
+function MetadataFields({
+  values,
+  fields,
+  onChange,
+}: {
+  values: Record<string, string>;
+  fields: MetadataField[];
+  onChange: (key: string, value: string) => void;
+}) {
+  return (
+    <div className="metadata-grid">
+      {fields.map((field) => (
+        <Field key={field.key} label={field.label}>
+          {field.multiline ? (
+            <textarea value={values[field.key] ?? ""} rows={3} onChange={(event) => onChange(field.key, event.target.value)} />
+          ) : (
+            <input value={values[field.key] ?? ""} onChange={(event) => onChange(field.key, event.target.value)} />
+          )}
+        </Field>
+      ))}
+    </div>
+  );
+}
+
+function SessionList({ sessions, selectedId, onSelect }: { sessions: CaptureSession[]; selectedId: string | null; onSelect: (id: string) => void }) {
+  if (sessions.length === 0) return <EmptyState text="No session in this project." />;
+  return (
+    <div className="list compact session-list">
+      {sessions.map((session) => (
+        <button key={session.id} className={session.id === selectedId ? "list-item active" : "list-item"} onClick={() => onSelect(session.id)}>
+          <strong>{session.name || "Untitled session"}</strong>
+          <span>{session.metadata?.operator || "No operator"} - {new Date(session.createdAt).toLocaleString()}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function DatasetQualityView({ summary }: { summary: DatasetQualitySummary }) {
+  const decodedPct = summary.captureCount === 0 ? 0 : summary.decodedCount / summary.captureCount;
+  return (
+    <div className="dataset-quality">
+      <div className="dataset-metrics">
+        <MetricCard label="Captures" value={String(summary.captureCount)} detail={`${summary.sessionCount} sessions`} />
+        <MetricCard label="Decoded" value={formatPercent(decodedPct)} detail={`${summary.rawOnlyCount} raw-only`} />
+        <MetricCard label="Median QC" value={summary.medianScore == null ? "n/a" : summary.medianScore.toFixed(0)} detail={summary.meanScore == null ? "no score" : `mean ${summary.meanScore.toFixed(1)}`} />
+        <MetricCard label="Predicted" value={formatPercent(summary.predictionCoverage)} detail={`${summary.predictionCount} captures`} />
+        <MetricCard label="Pass / Warn / Fail" value={`${summary.passCount}/${summary.warnCount}/${summary.failCount}`} detail={`${summary.unevaluatedCount} pending`} />
+        <MetricCard
+          label="Reps per sample"
+          value={summary.repsPerSample ? `${summary.repsPerSample.min}-${summary.repsPerSample.max}` : "n/a"}
+          detail={summary.repsPerSample ? `mean ${summary.repsPerSample.mean.toFixed(2)}` : "no sample"}
+        />
+      </div>
+      <div className="dataset-detail-row">
+        <div>
+          <strong>Axis</strong>
+          <span>
+            {summary.axisRange
+              ? `${summary.axisRange.start.toFixed(0)}-${summary.axisRange.end.toFixed(0)} ${summary.axisRange.unit}, ${summary.axisRange.bands} bands`
+              : "No decoded axis"}
+          </span>
+        </div>
+        <div>
+          <strong>Protocol</strong>
+          <span>{summary.metricProtocol.join(", ")}</span>
+        </div>
+      </div>
+      <div className="flag-list">
+        {summary.flagCounts.length === 0 ? (
+          <span>No recurring quality flags.</span>
+        ) : (
+          summary.flagCounts.slice(0, 6).map((item) => (
+            <span key={item.flag}>
+              {item.flag}: {item.count}
+            </span>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MetricCard({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return (
+    <div className="metric-card">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </div>
+  );
+}
+
 function PipelineContext({ artifact }: { artifact: PipelineArtifact | null }) {
-  if (!artifact) return <EmptyState text="No pipeline in context." />;
+  if (!artifact) return <EmptyState text="No n4a model in context." />;
   return (
     <div className={artifact.runnable ? "pipeline-context ready" : "pipeline-context definition"}>
       <strong>{artifact.name}</strong>
-      <span>{artifact.runnable ? `${artifact.nFeatures} features` : "definition only"}</span>
+      <span>{artifact.runnable ? `${artifact.nFeatures} features` : "pipeline definition only"}</span>
       {artifact.validationMessage && <small>{artifact.validationMessage}</small>}
     </div>
   );
@@ -654,7 +986,7 @@ function StatusPill({ state }: { state: DeviceConnectionState }) {
   return <span className={`status-pill ${state}`}>{text}</span>;
 }
 
-function MiniStat({ icon: Icon, text }: { icon: typeof Battery; text: string }) {
+function MiniStat({ icon: Icon, text }: { icon: LucideIcon; text: string }) {
   return (
     <span className="mini-stat">
       <Icon size={15} />
@@ -673,14 +1005,14 @@ function QualityBadge({ report }: { report: QualityReport }) {
   );
 }
 
-function RuntimeStack() {
+function RuntimeStack({ nativeShell, webBluetoothAvailable }: { nativeShell: boolean; webBluetoothAvailable: boolean }) {
   const manifest = inferenceEngine.capabilities();
   return (
     <div className="runtime-stack">
       <div><strong>{manifest.aggregate}</strong><span>{manifest.controllers.length} controllers</span></div>
       <div><strong>nirs4all-ui</strong><span>brand + contracts</span></div>
-      <div><strong>Capacitor</strong><span>Android / iOS / Web shell</span></div>
-      <div><strong>BLE GATT</strong><span>DLP NIRscan Nano profile</span></div>
+      <div><strong>Capacitor</strong><span>{nativeShell ? "native shell" : "web shell"}</span></div>
+      <div><strong>BLE</strong><span>{nativeShell ? "native plugin" : webBluetoothAvailable ? "Web Bluetooth" : "not available"}</span></div>
     </div>
   );
 }
@@ -694,6 +1026,7 @@ function DeviceStatusView({ status }: { status: DeviceStatus | null }) {
     ["Firmware", status.firmware ?? "n/a"],
     ["Serial", status.serialNumber ?? "n/a"],
     ["Stored scans", status.storedScans == null ? "n/a" : String(status.storedScans)],
+    ["Status", status.statusText ?? "n/a"],
   ];
   return (
     <dl className="status-grid">
@@ -764,10 +1097,10 @@ function SpectrumView({ capture, overlays = [] }: { capture: SpectrumCapture | n
   );
 }
 
-function QualityView({ report, compact = false }: { report: QualityReport | null; compact?: boolean }) {
+function QualityView({ report }: { report: QualityReport | null }) {
   if (!report) return <EmptyState text="No quality report selected." />;
   return (
-    <div className={compact ? "quality-view compact" : "quality-view"}>
+    <div className="quality-view">
       <div className={`quality-score ${report.status}`}>
         <strong>{report.score}</strong>
         <span>{report.status}</span>
@@ -780,6 +1113,13 @@ function QualityView({ report, compact = false }: { report: QualityReport | null
             {metric.threshold != null && <small>limit {formatNumber(metric.threshold)}</small>}
           </div>
         ))}
+        {report.flags.length > 0 && (
+          <div className="metric fail">
+            <span>Flags</span>
+            <strong>{report.flags.length}</strong>
+            <small>{report.flags.join(", ")}</small>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -794,7 +1134,7 @@ function PredictionPanel({
   artifact: PipelineArtifact | null;
   onPredict: () => void;
 }) {
-  if (!artifact) return <EmptyState text="No n4a loaded." />;
+  if (!artifact) return <EmptyState text="No n4a model loaded for this project." />;
   if (!artifact.runnable) {
     return (
       <div className="prediction-stack">
@@ -807,7 +1147,7 @@ function PredictionPanel({
       <PipelineContext artifact={artifact} />
       <button className="primary-button" disabled={!capture?.spectrum} onClick={onPredict}>
         <Sparkles size={18} />
-        Predict
+        Re-run prediction
       </button>
       {capture?.prediction ? (
         <div className="prediction-result">
@@ -815,27 +1155,14 @@ function PredictionPanel({
           <strong>{formatNumber(capture.prediction.value)}</strong>
         </div>
       ) : (
-        <EmptyState text="No prediction for selected capture." />
+        <EmptyState text="The active model will run automatically after the next decoded scan." />
       )}
     </div>
   );
 }
 
-function CaptureMeta({ capture }: { capture: SpectrumCapture | null }) {
-  if (!capture) return <EmptyState text="No capture selected." />;
-  return (
-    <dl className="status-grid">
-      <div><dt>Sample</dt><dd>{capture.sampleId}</dd></div>
-      <div><dt>Device</dt><dd>{capture.device.name}</dd></div>
-      <div><dt>Config</dt><dd>{capture.configuration?.name ?? "n/a"}</dd></div>
-      <div><dt>Source</dt><dd>{capture.source}</dd></div>
-      <div><dt>Tags</dt><dd>{capture.tags.join(", ") || "n/a"}</dd></div>
-    </dl>
-  );
-}
-
 function PipelineList({ pipelines, selectedId, onSelect }: { pipelines: PipelineArtifact[]; selectedId: string | null; onSelect: (id: string) => void }) {
-  if (pipelines.length === 0) return <EmptyState text="No pipeline loaded." />;
+  if (pipelines.length === 0) return <EmptyState text="No model loaded." />;
   return (
     <div className="list compact">
       {pipelines.map((pipeline) => (
@@ -867,7 +1194,7 @@ function CaptureList({
           <button onClick={() => onSelect(capture.id)}>
             <strong>{capture.sampleId}</strong>
             <span>{new Date(capture.createdAt).toLocaleString()}</span>
-            <span>{capture.spectrum ? `${capture.spectrum.values.length} bands` : "raw payload"}</span>
+            <span>{capture.spectrum ? `${capture.spectrum.values.length} bands` : "raw payload"} - {capture.quality?.status ?? "no QC"}</span>
           </button>
           <button className="icon-button" title="Delete capture" onClick={() => onDelete(capture.id)}>
             <Trash2 size={16} />
@@ -898,7 +1225,9 @@ function StoredScans({ device, onLoad }: { device: SpectrometerDevice | null; on
       </button>
       <div className="slot-grid">
         {indices.map((index) => (
-          <button key={index} onClick={() => onLoad(index)}>{index}</button>
+          <button key={index} onClick={() => onLoad(index)}>
+            {index}
+          </button>
         ))}
       </div>
     </div>
@@ -910,11 +1239,15 @@ function FileImportButton({ label, onFile }: { label: string; onFile: (file: Fil
     <label className="file-button">
       <Upload size={17} />
       <span>{label}</span>
-      <input type="file" accept=".json,.n4a,application/json" onChange={(event) => {
-        const file = event.target.files?.[0];
-        if (file) void onFile(file);
-        event.currentTarget.value = "";
-      }} />
+      <input
+        type="file"
+        accept=".json,.n4a,application/json"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) void onFile(file);
+          event.currentTarget.value = "";
+        }}
+      />
     </label>
   );
 }
@@ -933,20 +1266,35 @@ function createProject(name: string): Project {
     id: makeEntityId("project"),
     name,
     createdAt: new Date().toISOString(),
+    metadata: {},
   };
 }
 
-function createSession(projectId: string, name: string): CaptureSession {
+function createSession(projectId: string, name: string, operator = ""): CaptureSession {
   return {
     id: makeEntityId("session"),
     projectId,
     name,
     createdAt: new Date().toISOString(),
+    metadata: cleanMetadata({ operator }),
   };
 }
 
 function makeEntityId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function cleanMetadata(metadata: Record<string, string | undefined>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(metadata)
+      .map(([key, value]) => [key, value?.trim() ?? ""] as const)
+      .filter(([, value]) => value.length > 0),
+  );
+}
+
+function isWebBluetoothAvailable(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return Boolean((navigator as Navigator & { bluetooth?: unknown }).bluetooth);
 }
 
 function formatError(error: unknown): string {
@@ -958,4 +1306,8 @@ function formatNumber(value: number): string {
   if (Math.abs(value) >= 100) return value.toFixed(1);
   if (Math.abs(value) >= 1) return value.toFixed(3);
   return value.toExponential(2);
+}
+
+function formatPercent(value: number): string {
+  return `${Math.round(value * 100)}%`;
 }
