@@ -27,6 +27,7 @@
     "@capacitor/core": "8.4.1",
     "@capacitor/filesystem": "8.1.2",
     "@capacitor/share": "8.0.1",
+    "@nirs4all/formats-wasm": "^0.2.6",
     "@nirs4all/methods": "1.0.8",
     "dag-ml-data-wasm": "^0.2.8",
     "dag-ml-wasm": "^0.2.7",
@@ -45,7 +46,7 @@
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.3",
     "jsdom": "27.3.0",
-    "typescript": "7.0.2",
+    "typescript": "^5.9.3",
     "vite": "8.1.4",
     "vitest": "4.1.10"
   }

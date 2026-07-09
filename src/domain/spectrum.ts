@@ -1,4 +1,4 @@
-import type { Spectrum, SpectrumCapture } from "./types";
+import type { Spectrum, SpectrumCapture, SpectrumEnvelope } from "./types";
 
 export function makeCaptureId(prefix = "cap"): string {
   const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
@@ -57,6 +57,34 @@ export function capturesToMatrixCsv(captures: SpectrumCapture[]): string {
   return rows.map((row) => row.join(",")).join("\n");
 }
 
+export function buildSpectrumEnvelope(
+  captures: SpectrumCapture[],
+  targetAxis: number[],
+  label: string,
+  lowerQ = 0.1,
+  upperQ = 0.9,
+): SpectrumEnvelope | null {
+  const spectra = captures.filter((capture) => capture.spectrum) as Array<SpectrumCapture & { spectrum: Spectrum }>;
+  if (spectra.length < 2 || targetAxis.length === 0) return null;
+  const aligned = spectra.map((capture) => interpolateSpectrum(capture.spectrum, targetAxis).values);
+  const lower: number[] = [];
+  const median: number[] = [];
+  const upper: number[] = [];
+  for (let col = 0; col < targetAxis.length; col += 1) {
+    const values = aligned.map((row) => row[col]).filter(Number.isFinite).sort((a, b) => a - b);
+    if (values.length === 0) {
+      lower.push(Number.NaN);
+      median.push(Number.NaN);
+      upper.push(Number.NaN);
+    } else {
+      lower.push(quantile(values, lowerQ));
+      median.push(quantile(values, 0.5));
+      upper.push(quantile(values, upperQ));
+    }
+  }
+  return { label, axis: targetAxis, lower, median, upper };
+}
+
 function interpolatePoint(axis: number[], values: number[], x: number): number {
   if (axis.length === 0) return Number.NaN;
   if (x <= axis[0]) return values[0];
@@ -67,6 +95,15 @@ function interpolatePoint(axis: number[], values: number[], x: number): number {
   const span = axis[hi] - axis[lo];
   const t = span === 0 ? 0 : (x - axis[lo]) / span;
   return values[lo] + (values[hi] - values[lo]) * t;
+}
+
+function quantile(sorted: number[], q: number): number {
+  if (sorted.length === 1) return sorted[0];
+  const pos = (sorted.length - 1) * q;
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  const t = pos - lo;
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * t;
 }
 
 function formatAxis(value: number): string {

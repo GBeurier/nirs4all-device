@@ -7,11 +7,14 @@ full workflow can be exercised without hardware.
 ## Scope
 
 - Connect to a NIRS device through a device adapter (`SpectrometerDevice`).
+- Organize captures by project and session so field batches stay separated.
 - Start scans, show spectra when numeric data is available, and store captures locally.
-- Preserve raw DLP NIRscan Nano payloads when the device returns Spectrum C serialized structures.
+- Render the current scan with project/session q10-q90 quantile envelopes behind it.
+- Preserve raw DLP NIRscan Nano payloads and decode them on Android when the TI/KST Spectrum C AAR
+  is present.
 - Run lightweight capture-quality gates and attach the report to every capture.
-- Import/finalize portable nirs4all pipeline artifacts and run local prediction through the
-  `nirs4all` JavaScript/WASM aggregate where the artifact is compatible.
+- Keep a project-level `.n4a` context. Fitted portable artifacts run automatically after every
+  decoded scan; pipeline-definition-only artifacts are shown as loaded but not runnable.
 - Export individual spectra as CSV, aligned matrices as CSV, or a JSON capture bundle.
 
 ## Architecture
@@ -24,6 +27,7 @@ React/Vite UI
       -> USB/HID extension point
   -> IndexedDB capture store
   -> nirs4all portable JS/WASM runtime
+  -> Android NanoSpectrum bridge for TI Spectrum C when bundled
   -> nirs4all-ui brand assets
 ```
 
@@ -43,12 +47,19 @@ The BLE adapter uses the TI GATT profile:
 - Scan Data Information Service
 
 It can connect, sync time, read status/configuration metadata, trigger a scan, receive the scan
-completion notification, and fetch the serialized scan payload via multipacket notifications.
+completion notification, fetch calibration coefficients/matrix, and fetch the serialized scan
+payload via multipacket notifications.
 
-Current limitation: the Nano's serialized scan payload is interpreted by TI's Spectrum C library in
-the historical Android SDK. Until that parser is exposed through `nirs4all-formats`/WASM, real Nano
-captures are stored as raw payloads. Decoded spectra from the simulator or future adapters can already
-flow through quality, prediction, storage, and export.
+On Android, add the historical TI/KST SDK AAR here to enable full numeric decode:
+
+```text
+android/app/libs/nirscannanolibrary.aar
+```
+
+The repository does not commit that proprietary AAR. The local `NanoSpectrum` Capacitor plugin loads
+`com.kstechnologies.nirscannanolibrary.KSTNanoSDK` by reflection and returns wavelength, intensity,
+reflectance, and absorbance arrays. Without the AAR, scans are still captured and stored with their
+raw payload and an actionable note.
 
 ## Development
 
@@ -64,11 +75,15 @@ npm run dev
 Native shell setup:
 
 ```bash
+sudo apt install openjdk-17-jdk # or provide another Linux JDK 17
 npm run build
 npm run cap:sync
 npm run cap:android
 npm run cap:ios
 ```
+
+The checked-in Android project builds without the proprietary Nano AAR, but the local environment
+must provide a Linux JDK 17 because Android Gradle Plugin 8 requires it.
 
 ## GitHub Pages / deployment
 

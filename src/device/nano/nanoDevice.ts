@@ -20,6 +20,7 @@ import {
   uint32le,
   utf8,
 } from "./protocol";
+import { decodeNanoSpectrumNative } from "./nativeSpectrum";
 
 const S = NANO_UUID.services;
 const C = NANO_UUID.characteristics;
@@ -110,8 +111,9 @@ export class DlpNirscanNanoDevice implements SpectrometerDevice {
     onProgress?.({ phase: "transfer", pct: 58, message: "reading serialized scan payload" });
     const scanIndex = notifications.index ?? 0;
     const raw = await this.#requestMultipart(S.scanData, C.requestSerializedScanData, C.returnSerializedScanData, littleEndianIndex(scanIndex, 4));
-    onProgress?.({ phase: "decode", pct: 78, message: "preserving Nano payload" });
+    onProgress?.({ phase: "decode", pct: 78, message: "decoding Nano payload" });
     const configRaw = await this.#requestMultipart(S.scanConfiguration, C.requestScanConfigurationData, C.returnScanConfigurationData, littleEndianIndex(scanIndex, 2)).catch(() => new Uint8Array());
+    const decoded = await this.#decodeScanPayload(raw).catch((error): { spectrum?: SpectrumCapture["spectrum"]; notes?: string } => ({ notes: formatNanoDecodeError(error) }));
     onProgress?.({ phase: "done", pct: 100 });
     return {
       id: makeCaptureId("nano"),
@@ -121,8 +123,9 @@ export class DlpNirscanNanoDevice implements SpectrometerDevice {
       device: this.descriptor,
       configuration: parseConfigurationFallback(scanIndex, configRaw),
       rawPayloadBase64: encodeBytesBase64(raw),
-      tags: ["nano", "raw"],
-      notes: "Raw DLP NIRscan Nano payload. Numeric decoding requires the Spectrum C/Nano reader surface.",
+      spectrum: decoded?.spectrum,
+      tags: decoded?.spectrum ? ["nano", "decoded"] : ["nano", "raw"],
+      notes: decoded?.notes,
     };
   }
 
@@ -136,6 +139,8 @@ export class DlpNirscanNanoDevice implements SpectrometerDevice {
   async readStoredScan(index: number, onProgress?: (progress: ScanProgress) => void): Promise<SpectrumCapture> {
     onProgress?.({ phase: "transfer", pct: 35, message: "reading stored scan payload" });
     const raw = await this.#requestMultipart(S.scanData, C.requestSerializedScanData, C.returnSerializedScanData, littleEndianIndex(index, 4));
+    onProgress?.({ phase: "decode", pct: 78, message: "decoding Nano payload" });
+    const decoded = await this.#decodeScanPayload(raw).catch((error): { spectrum?: SpectrumCapture["spectrum"]; notes?: string } => ({ notes: formatNanoDecodeError(error) }));
     onProgress?.({ phase: "done", pct: 100 });
     return {
       id: makeCaptureId("nano"),
@@ -145,8 +150,22 @@ export class DlpNirscanNanoDevice implements SpectrometerDevice {
       device: this.descriptor,
       configuration: { id: String(index), name: `Stored scan ${index}`, wavelengthStartNm: 900, wavelengthEndNm: 1700 },
       rawPayloadBase64: encodeBytesBase64(raw),
-      tags: ["nano", "stored", "raw"],
+      spectrum: decoded?.spectrum,
+      tags: decoded?.spectrum ? ["nano", "stored", "decoded"] : ["nano", "stored", "raw"],
+      notes: decoded?.notes,
     };
+  }
+
+  async #decodeScanPayload(raw: Uint8Array): Promise<{ spectrum?: SpectrumCapture["spectrum"]; notes?: string } | null> {
+    const [referenceCoefficients, referenceMatrix] = await Promise.all([
+      this.#requestMultipart(S.calibration, C.requestReferenceCalibrationCoefficients, C.returnReferenceCalibrationCoefficients, new Uint8Array([0])),
+      this.#requestMultipart(S.calibration, C.requestReferenceCalibrationMatrix, C.returnReferenceCalibrationMatrix, new Uint8Array([0])),
+    ]);
+    return decodeNanoSpectrumNative({
+      scanDataBase64: encodeBytesBase64(raw),
+      referenceCoefficientsBase64: encodeBytesBase64(referenceCoefficients),
+      referenceMatrixBase64: encodeBytesBase64(referenceMatrix),
+    });
   }
 
   async #collectStartScan(saveToDevice: boolean): Promise<{ completed: boolean; index: number | null }> {
@@ -232,4 +251,9 @@ function parseUint16List(raw: Uint8Array): number[] {
 
 function valueOf<T>(result: PromiseSettledResult<T>): T | undefined {
   return result.status === "fulfilled" ? result.value : undefined;
+}
+
+function formatNanoDecodeError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return `Nano Spectrum C decode unavailable; raw payload was preserved. ${message}`;
 }

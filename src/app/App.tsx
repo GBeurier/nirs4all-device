@@ -12,8 +12,10 @@ import {
   Gauge,
   HardDrive,
   Info,
+  Layers3,
   Loader2,
   Play,
+  Plus,
   RadioTower,
   Save,
   ScanLine,
@@ -33,10 +35,13 @@ import { BrowserUsbTransport } from "@/device/webUsbTransport";
 import type {
   DeviceConnectionState,
   DeviceStatus,
+  CaptureSession,
   PipelineArtifact,
+  Project,
   QualityReport,
   ScanConfiguration,
   ScanProgress,
+  SpectrumEnvelope,
   SpectrumCapture,
   SpectrometerDevice,
   TransportKind,
@@ -45,12 +50,16 @@ import { buildExport, exportTextFile } from "@/storage/export";
 import { CaptureStore } from "@/storage/captureStore";
 import { LocalQualityEngine } from "@/runtime/quality";
 import { PortableNirs4allInferenceEngine } from "@/runtime/inference";
+import { buildSpectrumEnvelope } from "@/domain/spectrum";
 
 type ViewId = "connect" | "capture" | "quality" | "predict" | "library";
 
 const store = new CaptureStore();
 const qualityEngine = new LocalQualityEngine();
 const inferenceEngine = new PortableNirs4allInferenceEngine();
+const ACTIVE_PROJECT_KEY = "nirs4all-device.activeProjectId";
+const ACTIVE_SESSION_KEY = "nirs4all-device.activeSessionId";
+const ACTIVE_PIPELINE_KEY = "nirs4all-device.activePipelineId";
 
 const views: Array<{ id: ViewId; label: string; icon: typeof RadioTower }> = [
   { id: "connect", label: "Connect", icon: RadioTower },
@@ -75,14 +84,53 @@ export default function App() {
   const [selectedCaptureId, setSelectedCaptureId] = useState<string | null>(null);
   const [pipelines, setPipelines] = useState<PipelineArtifact[]>([]);
   const [selectedPipelineId, setSelectedPipelineId] = useState<string | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [sessions, setSessions] = useState<CaptureSession[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     void refreshStore();
   }, []);
 
-  const selectedCapture = captures.find((capture) => capture.id === selectedCaptureId) ?? captures[0] ?? null;
-  const selectedPipeline = pipelines.find((pipeline) => pipeline.id === selectedPipelineId) ?? pipelines[0] ?? null;
+  useEffect(() => {
+    if (selectedProjectId) localStorage.setItem(ACTIVE_PROJECT_KEY, selectedProjectId);
+  }, [selectedProjectId]);
+
+  useEffect(() => {
+    if (selectedSessionId) localStorage.setItem(ACTIVE_SESSION_KEY, selectedSessionId);
+  }, [selectedSessionId]);
+
+  useEffect(() => {
+    if (selectedPipelineId) localStorage.setItem(ACTIVE_PIPELINE_KEY, selectedPipelineId);
+  }, [selectedPipelineId]);
+
+  const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? projects[0] ?? null;
+  const projectSessions = sessions.filter((session) => session.projectId === selectedProject?.id);
+  const selectedSession = projectSessions.find((session) => session.id === selectedSessionId) ?? projectSessions[0] ?? null;
+  const scopedCaptures = captures.filter((capture) => !selectedProject || capture.projectId === selectedProject.id || !capture.projectId);
+  const selectedCapture = scopedCaptures.find((capture) => capture.id === selectedCaptureId) ?? scopedCaptures[0] ?? null;
+  const projectPipelines = pipelines.filter((pipeline) => !selectedProject || !pipeline.projectId || pipeline.projectId === selectedProject.id);
+  const selectedPipeline =
+    projectPipelines.find((pipeline) => pipeline.id === selectedPipelineId) ??
+    projectPipelines.find((pipeline) => pipeline.id === selectedProject?.activePipelineId) ??
+    projectPipelines[0] ??
+    null;
+  const projectEnvelope = useMemo(
+    () => buildOverlay(scopedCaptures.filter((capture) => capture.id !== selectedCapture?.id), selectedCapture, "Project"),
+    [scopedCaptures, selectedCapture],
+  );
+  const sessionEnvelope = useMemo(
+    () =>
+      buildOverlay(
+        scopedCaptures.filter((capture) => capture.sessionId === selectedSession?.id && capture.id !== selectedCapture?.id),
+        selectedCapture,
+        "Session",
+      ),
+    [scopedCaptures, selectedCapture, selectedSession?.id],
+  );
+  const spectrumOverlays = [projectEnvelope, sessionEnvelope].filter(Boolean) as SpectrumEnvelope[];
   const connected = state === "connected" || state === "busy";
   const logo = useMemo(
     () => brand.generateNirs4allBrandSvg("nirs4all", { variant: "icon", title: "nirs4all Device" }),
@@ -90,11 +138,37 @@ export default function App() {
   );
 
   async function refreshStore() {
-    const [storedCaptures, storedPipelines] = await Promise.all([store.listCaptures(), store.listPipelines()]);
+    let [storedCaptures, storedPipelines, storedProjects, storedSessions] = await Promise.all([
+      store.listCaptures(),
+      store.listPipelines(),
+      store.listProjects(),
+      store.listSessions(),
+    ]);
+    if (storedProjects.length === 0) {
+      const project = createProject("Field project");
+      await store.saveProject(project);
+      storedProjects = [project];
+    }
+    if (storedSessions.filter((session) => session.projectId === storedProjects[0].id).length === 0) {
+      const session = createSession(storedProjects[0].id, "Session 1");
+      await store.saveSession(session);
+      storedSessions = [session, ...storedSessions];
+    }
+    const activeProjectId = localStorage.getItem(ACTIVE_PROJECT_KEY);
+    const projectId = storedProjects.find((project) => project.id === activeProjectId)?.id ?? storedProjects[0].id;
+    const activeSessionId = localStorage.getItem(ACTIVE_SESSION_KEY);
+    const sessionId =
+      storedSessions.find((session) => session.projectId === projectId && session.id === activeSessionId)?.id ??
+      storedSessions.find((session) => session.projectId === projectId)?.id ??
+      null;
     setCaptures(storedCaptures);
     setPipelines(storedPipelines);
-    setSelectedCaptureId((prev) => prev ?? storedCaptures[0]?.id ?? null);
-    setSelectedPipelineId((prev) => prev ?? storedPipelines[0]?.id ?? null);
+    setProjects(storedProjects);
+    setSessions(storedSessions);
+    setSelectedProjectId(projectId);
+    setSelectedSessionId(sessionId);
+    setSelectedCaptureId((prev) => prev ?? storedCaptures.find((capture) => capture.projectId === projectId)?.id ?? storedCaptures[0]?.id ?? null);
+    setSelectedPipelineId((prev) => prev ?? localStorage.getItem(ACTIVE_PIPELINE_KEY) ?? storedProjects.find((project) => project.id === projectId)?.activePipelineId ?? storedPipelines[0]?.id ?? null);
   }
 
   const connect = useCallback(async () => {
@@ -133,6 +207,70 @@ export default function App() {
     setView("connect");
   }, [device]);
 
+  const selectProject = useCallback((id: string) => {
+    const nextProject = projects.find((project) => project.id === id);
+    const nextSession = sessions.find((session) => session.projectId === id) ?? null;
+    setSelectedProjectId(id);
+    setSelectedSessionId(nextSession?.id ?? null);
+    setSelectedCaptureId(captures.find((capture) => capture.projectId === id)?.id ?? null);
+    setSelectedPipelineId(nextProject?.activePipelineId ?? pipelines.find((pipeline) => !pipeline.projectId || pipeline.projectId === id)?.id ?? null);
+  }, [captures, pipelines, projects, sessions]);
+
+  const createNewProject = useCallback(async () => {
+    const name = window.prompt("Project name", `Project ${projects.length + 1}`)?.trim();
+    if (!name) return;
+    const project = createProject(name);
+    const session = createSession(project.id, "Session 1");
+    await Promise.all([store.saveProject(project), store.saveSession(session)]);
+    setProjects((prev) => [...prev, project]);
+    setSessions((prev) => [session, ...prev]);
+    setSelectedProjectId(project.id);
+    setSelectedSessionId(session.id);
+    setSelectedCaptureId(null);
+    setSelectedPipelineId(null);
+  }, [projects.length]);
+
+  const createNewSession = useCallback(async () => {
+    if (!selectedProject) return;
+    const count = sessions.filter((session) => session.projectId === selectedProject.id).length + 1;
+    const name = window.prompt("Session name", `Session ${count}`)?.trim();
+    if (!name) return;
+    const session = createSession(selectedProject.id, name);
+    await store.saveSession(session);
+    setSessions((prev) => [session, ...prev]);
+    setSelectedSessionId(session.id);
+    setSelectedCaptureId(null);
+  }, [selectedProject, sessions]);
+
+  const selectPipeline = useCallback(async (id: string) => {
+    setSelectedPipelineId(id);
+    if (!selectedProject) return;
+    const project = { ...selectedProject, activePipelineId: id };
+    await store.saveProject(project);
+    setProjects((prev) => prev.map((item) => (item.id === project.id ? project : item)));
+  }, [selectedProject]);
+
+  const saveCompletedCapture = useCallback(async (rawCapture: SpectrumCapture): Promise<SpectrumCapture> => {
+    const quality = await qualityEngine.evaluate(rawCapture);
+    let capture: SpectrumCapture = {
+      ...rawCapture,
+      projectId: selectedProject?.id,
+      sessionId: selectedSession?.id,
+      quality,
+    };
+    if (selectedPipeline?.runnable) {
+      try {
+        capture = { ...capture, prediction: await inferenceEngine.predict(capture, selectedPipeline) };
+      } catch (err) {
+        setError(`Capture saved; prediction skipped: ${formatError(err)}`);
+      }
+    }
+    await store.saveCapture(capture);
+    setCaptures((prev) => [capture, ...prev.filter((item) => item.id !== capture.id)]);
+    setSelectedCaptureId(capture.id);
+    return capture;
+  }, [selectedPipeline, selectedProject?.id, selectedSession?.id]);
+
   const runScan = useCallback(async () => {
     if (!device) return;
     setError(null);
@@ -140,19 +278,15 @@ export default function App() {
     try {
       await device.setActiveConfiguration(configId);
       const rawCapture = await device.startScan({ saveToDevice, sampleId }, setProgress);
-      const quality = await qualityEngine.evaluate(rawCapture);
-      const capture: SpectrumCapture = { ...rawCapture, quality };
-      await store.saveCapture(capture);
-      setCaptures((prev) => [capture, ...prev.filter((item) => item.id !== capture.id)]);
-      setSelectedCaptureId(capture.id);
-      setView("quality");
+      await saveCompletedCapture(rawCapture);
+      setView("capture");
     } catch (err) {
       setError(formatError(err));
     } finally {
       setProgress(null);
       setState("connected");
     }
-  }, [configId, device, sampleId, saveToDevice]);
+  }, [configId, device, sampleId, saveToDevice, saveCompletedCapture]);
 
   const loadStored = useCallback(async (index: number) => {
     if (!device) return;
@@ -160,11 +294,7 @@ export default function App() {
     setError(null);
     try {
       const rawCapture = await device.readStoredScan(index, setProgress);
-      const quality = await qualityEngine.evaluate(rawCapture);
-      const capture: SpectrumCapture = { ...rawCapture, quality };
-      await store.saveCapture(capture);
-      setCaptures((prev) => [capture, ...prev.filter((item) => item.id !== capture.id)]);
-      setSelectedCaptureId(capture.id);
+      await saveCompletedCapture(rawCapture);
       setView("library");
     } catch (err) {
       setError(formatError(err));
@@ -172,31 +302,41 @@ export default function App() {
       setProgress(null);
       setState("connected");
     }
-  }, [device]);
+  }, [device, saveCompletedCapture]);
 
   const importPipeline = useCallback(async (file: File) => {
     setError(null);
     try {
-      const artifact = inferenceEngine.importArtifact(await file.text(), file.name);
+      const artifact = { ...inferenceEngine.importArtifact(await file.text(), file.name), projectId: selectedProject?.id };
       await store.savePipeline(artifact);
+      if (selectedProject) {
+        const project = { ...selectedProject, activePipelineId: artifact.id };
+        await store.saveProject(project);
+        setProjects((prev) => prev.map((item) => (item.id === project.id ? project : item)));
+      }
       setPipelines((prev) => [artifact, ...prev.filter((item) => item.id !== artifact.id)]);
       setSelectedPipelineId(artifact.id);
     } catch (err) {
       setError(formatError(err));
     }
-  }, []);
+  }, [selectedProject]);
 
   const fitDemoPipeline = useCallback(async () => {
     setError(null);
     try {
-      const artifact = await inferenceEngine.fitDemoArtifact(captures);
+      const artifact = { ...(await inferenceEngine.fitDemoArtifact(scopedCaptures)), projectId: selectedProject?.id };
       await store.savePipeline(artifact);
+      if (selectedProject) {
+        const project = { ...selectedProject, activePipelineId: artifact.id };
+        await store.saveProject(project);
+        setProjects((prev) => prev.map((item) => (item.id === project.id ? project : item)));
+      }
       setPipelines((prev) => [artifact, ...prev.filter((item) => item.id !== artifact.id)]);
       setSelectedPipelineId(artifact.id);
     } catch (err) {
       setError(formatError(err));
     }
-  }, [captures]);
+  }, [scopedCaptures, selectedProject]);
 
   const predict = useCallback(async () => {
     if (!selectedCapture || !selectedPipeline) return;
@@ -219,9 +359,9 @@ export default function App() {
   }, []);
 
   const exportCaptures = useCallback(async (kind: "single-csv" | "matrix-csv" | "json") => {
-    const target = kind === "single-csv" && selectedCapture ? [selectedCapture] : captures;
+    const target = kind === "single-csv" && selectedCapture ? [selectedCapture] : scopedCaptures;
     await exportTextFile(buildExport(target, kind));
-  }, [captures, selectedCapture]);
+  }, [scopedCaptures, selectedCapture]);
 
   return (
     <div className="app-shell">
@@ -288,38 +428,65 @@ export default function App() {
           )}
 
           {view === "capture" && (
-            <section className="screen-grid capture-screen">
-              <Panel title="Scan Control" icon={ScanLine}>
-                <Field label="Sample ID">
-                  <input value={sampleId} onChange={(event) => setSampleId(event.target.value)} />
-                </Field>
-                <Field label="Configuration">
-                  <select value={configId} onChange={(event) => setConfigId(event.target.value)}>
-                    {configs.map((config) => (
-                      <option key={config.id} value={config.id}>
-                        {config.name}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <label className="switch-line">
-                  <input type="checkbox" checked={saveToDevice} onChange={(event) => setSaveToDevice(event.target.checked)} />
-                  <span>Save on device SD</span>
-                </label>
-                <button className="primary-button scan-button" disabled={!connected || state === "busy"} onClick={runScan}>
-                  {state === "busy" ? <Loader2 className="spin" size={18} /> : <Play size={18} />}
-                  Start scan
-                </button>
-                {progress && <ProgressBar progress={progress} />}
-              </Panel>
+            <section className="capture-workbench">
+              <div className="control-column">
+                <Panel title="Context" icon={Layers3}>
+                  <ProjectSessionPanel
+                    projects={projects}
+                    sessions={projectSessions}
+                    selectedProjectId={selectedProject?.id ?? ""}
+                    selectedSessionId={selectedSession?.id ?? ""}
+                    onProjectChange={selectProject}
+                    onSessionChange={setSelectedSessionId}
+                    onNewProject={createNewProject}
+                    onNewSession={createNewSession}
+                  />
+                </Panel>
+                <Panel title="Scan Control" icon={ScanLine}>
+                  <Field label="Sample ID">
+                    <input value={sampleId} onChange={(event) => setSampleId(event.target.value)} />
+                  </Field>
+                  <Field label="Configuration">
+                    <select value={configId} onChange={(event) => setConfigId(event.target.value)}>
+                      {configs.map((config) => (
+                        <option key={config.id} value={config.id}>
+                          {config.name}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <label className="switch-line">
+                    <input type="checkbox" checked={saveToDevice} onChange={(event) => setSaveToDevice(event.target.checked)} />
+                    <span>Save on device SD</span>
+                  </label>
+                  <button className="primary-button scan-button" disabled={!connected || state === "busy" || !selectedSession} onClick={runScan}>
+                    {state === "busy" ? <Loader2 className="spin" size={18} /> : <Play size={18} />}
+                    Start scan
+                  </button>
+                  {progress && <ProgressBar progress={progress} />}
+                </Panel>
+                <Panel title="Pipeline" icon={Sparkles}>
+                  <FileImportButton label="Load .n4a" onFile={importPipeline} />
+                  <PipelineContext artifact={selectedPipeline} />
+                </Panel>
+                <Panel title="Device Status" icon={Info}>
+                  <DeviceStatusView status={status} />
+                </Panel>
+              </div>
 
-              <Panel title="Spectrum" icon={Activity} wide>
-                <SpectrumView capture={selectedCapture} />
-              </Panel>
-
-              <Panel title="Device Status" icon={Info}>
-                <DeviceStatusView status={status} />
-              </Panel>
+              <div className="capture-stack">
+                <Panel title="Spectrum" icon={Activity} wide>
+                  <SpectrumView capture={selectedCapture} overlays={spectrumOverlays} />
+                </Panel>
+                <div className="analysis-grid">
+                  <Panel title="Quality Gate" icon={Gauge}>
+                    <QualityView report={selectedCapture?.quality ?? null} compact />
+                  </Panel>
+                  <Panel title="Prediction" icon={Sparkles}>
+                    <PredictionPanel capture={selectedCapture} artifact={selectedPipeline} onPredict={predict} />
+                  </Panel>
+                </div>
+              </div>
             </section>
           )}
 
@@ -342,12 +509,12 @@ export default function App() {
                   <FlaskConical size={17} />
                   Fit demo from captures
                 </button>
-                <PipelineList pipelines={pipelines} selectedId={selectedPipeline?.id ?? null} onSelect={setSelectedPipelineId} />
+                <PipelineList pipelines={projectPipelines} selectedId={selectedPipeline?.id ?? null} onSelect={(id) => void selectPipeline(id)} />
               </Panel>
               <Panel title="Inference" icon={Cpu} wide>
-                <SpectrumView capture={selectedCapture} />
+                <SpectrumView capture={selectedCapture} overlays={spectrumOverlays} />
                 <div className="button-row">
-                  <button className="primary-button" disabled={!selectedCapture || !selectedPipeline} onClick={predict}>
+                  <button className="primary-button" disabled={!selectedCapture?.spectrum || !selectedPipeline?.runnable} onClick={predict}>
                     <Sparkles size={18} />
                     Predict
                   </button>
@@ -370,16 +537,16 @@ export default function App() {
                     <Download size={17} />
                     CSV
                   </button>
-                  <button className="ghost-button" onClick={() => exportCaptures("matrix-csv")} disabled={captures.length === 0}>
+                  <button className="ghost-button" onClick={() => exportCaptures("matrix-csv")} disabled={scopedCaptures.length === 0}>
                     <Save size={17} />
                     Matrix CSV
                   </button>
-                  <button className="ghost-button" onClick={() => exportCaptures("json")} disabled={captures.length === 0}>
+                  <button className="ghost-button" onClick={() => exportCaptures("json")} disabled={scopedCaptures.length === 0}>
                     <FileJson size={17} />
                     JSON
                   </button>
                 </div>
-                <CaptureList captures={captures} selectedId={selectedCapture?.id ?? null} onSelect={setSelectedCaptureId} onDelete={removeCapture} />
+                <CaptureList captures={scopedCaptures} selectedId={selectedCapture?.id ?? null} onSelect={setSelectedCaptureId} onDelete={removeCapture} />
               </Panel>
               <Panel title="Stored Scans" icon={HardDrive}>
                 <StoredScans device={device} onLoad={loadStored} />
@@ -419,6 +586,66 @@ function TransportButton({ active, icon: Icon, title, onClick }: { active: boole
       <Icon size={22} />
       <span>{title}</span>
     </button>
+  );
+}
+
+function ProjectSessionPanel({
+  projects,
+  sessions,
+  selectedProjectId,
+  selectedSessionId,
+  onProjectChange,
+  onSessionChange,
+  onNewProject,
+  onNewSession,
+}: {
+  projects: Project[];
+  sessions: CaptureSession[];
+  selectedProjectId: string;
+  selectedSessionId: string;
+  onProjectChange: (id: string) => void;
+  onSessionChange: (id: string) => void;
+  onNewProject: () => void;
+  onNewSession: () => void;
+}) {
+  return (
+    <div className="context-stack">
+      <div className="select-action">
+        <Field label="Project">
+          <select value={selectedProjectId} onChange={(event) => onProjectChange(event.target.value)}>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>{project.name}</option>
+            ))}
+          </select>
+        </Field>
+        <button className="icon-button context-add" title="New project" onClick={onNewProject}>
+          <Plus size={16} />
+        </button>
+      </div>
+      <div className="select-action">
+        <Field label="Session">
+          <select value={selectedSessionId} onChange={(event) => onSessionChange(event.target.value)}>
+            {sessions.map((session) => (
+              <option key={session.id} value={session.id}>{session.name}</option>
+            ))}
+          </select>
+        </Field>
+        <button className="icon-button context-add" title="New session" onClick={onNewSession}>
+          <Plus size={16} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PipelineContext({ artifact }: { artifact: PipelineArtifact | null }) {
+  if (!artifact) return <EmptyState text="No pipeline in context." />;
+  return (
+    <div className={artifact.runnable ? "pipeline-context ready" : "pipeline-context definition"}>
+      <strong>{artifact.name}</strong>
+      <span>{artifact.runnable ? `${artifact.nFeatures} features` : "definition only"}</span>
+      {artifact.validationMessage && <small>{artifact.validationMessage}</small>}
+    </div>
   );
 }
 
@@ -494,36 +721,53 @@ function ProgressBar({ progress }: { progress: ScanProgress }) {
   );
 }
 
-function SpectrumView({ capture }: { capture: SpectrumCapture | null }) {
+function SpectrumView({ capture, overlays = [] }: { capture: SpectrumCapture | null; overlays?: SpectrumEnvelope[] }) {
   if (!capture?.spectrum) {
     return <EmptyState text={capture?.rawPayloadBase64 ? "Raw Nano payload captured." : "No decoded spectrum selected."} />;
   }
   const { axis, values } = capture.spectrum;
-  const minY = Math.min(...values);
-  const maxY = Math.max(...values);
-  const points = values.map((value, i) => {
+  const overlayValues = overlays.flatMap((overlay) => [...overlay.lower, ...overlay.median, ...overlay.upper]).filter(Number.isFinite);
+  const minY = Math.min(...values, ...overlayValues);
+  const maxY = Math.max(...values, ...overlayValues);
+  const point = (value: number, i: number) => {
     const x = (i / Math.max(1, values.length - 1)) * 100;
     const y = 100 - ((value - minY) / Math.max(1e-12, maxY - minY)) * 84 - 8;
     return `${x.toFixed(3)},${y.toFixed(3)}`;
-  }).join(" ");
+  };
+  const points = values.map(point).join(" ");
   return (
     <div className="spectrum-view">
       <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Spectrum">
+        {overlays.map((overlay) => {
+          const cls = overlay.label.toLowerCase();
+          const upper = overlay.upper.map(point);
+          const lower = overlay.lower.map(point).reverse();
+          const median = overlay.median.map(point).join(" ");
+          return (
+            <g key={overlay.label} className={`quantile-overlay ${cls}`}>
+              <polygon points={[...upper, ...lower].join(" ")} />
+              <polyline points={median} />
+            </g>
+          );
+        })}
         <polyline points={points} />
       </svg>
       <div className="spectrum-meta">
         <span>{axis[0]?.toFixed(0)}-{axis.at(-1)?.toFixed(0)} {capture.spectrum.axisUnit}</span>
         <span>{values.length} bands</span>
         <span>{capture.spectrum.signalType}</span>
+        {overlays.map((overlay) => (
+          <span key={overlay.label}>{overlay.label} q10-q90</span>
+        ))}
       </div>
     </div>
   );
 }
 
-function QualityView({ report }: { report: QualityReport | null }) {
+function QualityView({ report, compact = false }: { report: QualityReport | null; compact?: boolean }) {
   if (!report) return <EmptyState text="No quality report selected." />;
   return (
-    <div className="quality-view">
+    <div className={compact ? "quality-view compact" : "quality-view"}>
       <div className={`quality-score ${report.status}`}>
         <strong>{report.score}</strong>
         <span>{report.status}</span>
@@ -537,6 +781,42 @@ function QualityView({ report }: { report: QualityReport | null }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function PredictionPanel({
+  capture,
+  artifact,
+  onPredict,
+}: {
+  capture: SpectrumCapture | null;
+  artifact: PipelineArtifact | null;
+  onPredict: () => void;
+}) {
+  if (!artifact) return <EmptyState text="No n4a loaded." />;
+  if (!artifact.runnable) {
+    return (
+      <div className="prediction-stack">
+        <PipelineContext artifact={artifact} />
+      </div>
+    );
+  }
+  return (
+    <div className="prediction-stack">
+      <PipelineContext artifact={artifact} />
+      <button className="primary-button" disabled={!capture?.spectrum} onClick={onPredict}>
+        <Sparkles size={18} />
+        Predict
+      </button>
+      {capture?.prediction ? (
+        <div className="prediction-result">
+          <span>{capture.prediction.pipelineName}</span>
+          <strong>{formatNumber(capture.prediction.value)}</strong>
+        </div>
+      ) : (
+        <EmptyState text="No prediction for selected capture." />
+      )}
     </div>
   );
 }
@@ -561,7 +841,7 @@ function PipelineList({ pipelines, selectedId, onSelect }: { pipelines: Pipeline
       {pipelines.map((pipeline) => (
         <button key={pipeline.id} className={pipeline.id === selectedId ? "list-item active" : "list-item"} onClick={() => onSelect(pipeline.id)}>
           <strong>{pipeline.name}</strong>
-          <span>{pipeline.nFeatures} features</span>
+          <span>{pipeline.runnable ? `${pipeline.nFeatures} features` : "definition only"}</span>
         </button>
       ))}
     </div>
@@ -641,6 +921,32 @@ function FileImportButton({ label, onFile }: { label: string; onFile: (file: Fil
 
 function EmptyState({ text }: { text: string }) {
   return <div className="empty-state">{text}</div>;
+}
+
+function buildOverlay(captures: SpectrumCapture[], selectedCapture: SpectrumCapture | null, label: string): SpectrumEnvelope | null {
+  if (!selectedCapture?.spectrum) return null;
+  return buildSpectrumEnvelope(captures, selectedCapture.spectrum.axis, label);
+}
+
+function createProject(name: string): Project {
+  return {
+    id: makeEntityId("project"),
+    name,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function createSession(projectId: string, name: string): CaptureSession {
+  return {
+    id: makeEntityId("session"),
+    projectId,
+    name,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function makeEntityId(prefix: string): string {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function formatError(error: unknown): string {

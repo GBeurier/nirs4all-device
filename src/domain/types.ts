@@ -36,6 +36,21 @@ export interface ScanConfiguration {
   raw?: number[];
 }
 
+export interface Project {
+  id: string;
+  name: string;
+  createdAt: string;
+  activePipelineId?: string;
+}
+
+export interface CaptureSession {
+  id: string;
+  projectId: string;
+  name: string;
+  createdAt: string;
+  closedAt?: string;
+}
+
 export interface Spectrum {
   axis: number[];
   values: number[];
@@ -43,11 +58,21 @@ export interface Spectrum {
   signalType: "intensity" | "reflectance" | "absorbance" | "unknown";
 }
 
+export interface SpectrumEnvelope {
+  label: string;
+  axis: number[];
+  lower: number[];
+  median: number[];
+  upper: number[];
+}
+
 export interface SpectrumCapture {
   id: string;
   sampleId: string;
   createdAt: string;
   source: "live" | "stored" | "imported" | "simulated";
+  projectId?: string;
+  sessionId?: string;
   device: DeviceDescriptor;
   configuration?: ScanConfiguration;
   spectrum?: Spectrum;
@@ -78,10 +103,14 @@ export interface QualityReport {
 
 export interface PipelineArtifact {
   id: string;
+  projectId?: string;
   name: string;
   importedAt: string;
   engine: string;
   nFeatures: number;
+  runnable: boolean;
+  kind: "portable_result" | "pipeline_definition";
+  validationMessage?: string;
   targetName?: string;
   raw: unknown;
 }

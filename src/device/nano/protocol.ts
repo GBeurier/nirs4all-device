@@ -47,8 +47,8 @@ export function appendMultipartPacket(packets: Uint8Array[], packet: Uint8Array)
   if (packet.length === 0) return { done: false, payload: null };
   packets.push(packet);
   if (packets.length === 1) return { done: false, payload: null };
-  const expectedLength = packets[0][1] ?? 0;
-  const data = packets.slice(1).flatMap((part, i) => Array.from(part.slice(i === 0 ? 2 : 1)));
+  const expectedLength = packets[0].length >= 3 ? uint16le(packets[0], 1) : packets[0][1] ?? 0;
+  const data = packets.slice(1).flatMap((part) => Array.from(part.slice(1)));
   if (expectedLength > 0 && data.length >= expectedLength) {
     return { done: true, payload: Uint8Array.from(data.slice(0, expectedLength)) };
   }

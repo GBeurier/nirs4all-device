@@ -1,9 +1,11 @@
-import type { PipelineArtifact, SpectrumCapture } from "@/domain/types";
+import type { CaptureSession, PipelineArtifact, Project, SpectrumCapture } from "@/domain/types";
 
 const DB_NAME = "nirs4all-device";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const CAPTURES = "captures";
 const PIPELINES = "pipelines";
+const PROJECTS = "projects";
+const SESSIONS = "sessions";
 
 export class CaptureStore {
   #db: Promise<IDBDatabase> | null = null;
@@ -30,9 +32,27 @@ export class CaptureStore {
     await this.#put(PIPELINES, pipeline);
   }
 
+  async listProjects(): Promise<Project[]> {
+    const rows = await this.#readAll<Project>(PROJECTS);
+    return rows.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async saveProject(project: Project): Promise<void> {
+    await this.#put(PROJECTS, project);
+  }
+
+  async listSessions(): Promise<CaptureSession[]> {
+    const rows = await this.#readAll<CaptureSession>(SESSIONS);
+    return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async saveSession(session: CaptureSession): Promise<void> {
+    await this.#put(SESSIONS, session);
+  }
+
   async clear(): Promise<void> {
     const db = await this.#open();
-    await Promise.all([clearStore(db, CAPTURES), clearStore(db, PIPELINES)]);
+    await Promise.all([clearStore(db, CAPTURES), clearStore(db, PIPELINES), clearStore(db, PROJECTS), clearStore(db, SESSIONS)]);
   }
 
   async #readAll<T>(storeName: string): Promise<T[]> {
@@ -78,6 +98,8 @@ function openDb(): Promise<IDBDatabase> {
       const db = request.result;
       if (!db.objectStoreNames.contains(CAPTURES)) db.createObjectStore(CAPTURES, { keyPath: "id" });
       if (!db.objectStoreNames.contains(PIPELINES)) db.createObjectStore(PIPELINES, { keyPath: "id" });
+      if (!db.objectStoreNames.contains(PROJECTS)) db.createObjectStore(PROJECTS, { keyPath: "id" });
+      if (!db.objectStoreNames.contains(SESSIONS)) db.createObjectStore(SESSIONS, { keyPath: "id" });
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);

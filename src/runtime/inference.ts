@@ -32,12 +32,16 @@ export class PortableNirs4allInferenceEngine implements InferenceEngine {
       importedAt: new Date().toISOString(),
       engine: parsed.engine,
       nFeatures: parsed.nFeatures,
+      runnable: parsed.runnable,
+      kind: parsed.kind,
+      validationMessage: parsed.validationMessage,
       targetName: parsed.targetName,
       raw,
     };
   }
 
   async predict(capture: SpectrumCapture, artifact: PipelineArtifact): Promise<PredictionResult> {
+    if (!artifact.runnable) throw new Error(artifact.validationMessage ?? "This n4a artifact is a pipeline definition, not a fitted portable model.");
     if (!capture.spectrum) throw new Error("Cannot predict without a decoded numeric spectrum.");
     const portable = extractPortableResult(artifact.raw);
     const axis = portable.axis ?? capture.spectrum.axis;
@@ -94,21 +98,49 @@ export class PortableNirs4allInferenceEngine implements InferenceEngine {
       importedAt: new Date().toISOString(),
       engine: this.name,
       nFeatures: axis.length,
+      runnable: true,
+      kind: "portable_result",
       targetName: "demo_target",
       raw,
     };
   }
 }
 
-function parseArtifact(raw: unknown, filename: string): { id: string; name: string; engine: string; nFeatures: number; targetName?: string } {
-  const portable = extractPortableResult(raw);
-  return {
-    id: stableId(filename),
-    name: portable.name,
-    engine: "nirs4all-core-js-wasm",
-    nFeatures: portable.result.cols,
-    targetName: portable.targetName,
-  };
+function parseArtifact(raw: unknown, filename: string): {
+  id: string;
+  name: string;
+  engine: string;
+  nFeatures: number;
+  runnable: boolean;
+  kind: PipelineArtifact["kind"];
+  validationMessage?: string;
+  targetName?: string;
+} {
+  try {
+    const portable = extractPortableResult(raw);
+    return {
+      id: stableId(filename),
+      name: portable.name,
+      engine: "nirs4all-core-js-wasm",
+      nFeatures: portable.result.cols,
+      runnable: true,
+      kind: "portable_result",
+      targetName: portable.targetName,
+    };
+  } catch (error) {
+    const definition = extractPipelineDefinition(raw);
+    if (!definition) throw error;
+    return {
+      id: stableId(filename),
+      name: definition.name,
+      engine: "nirs4all-core-js-wasm",
+      nFeatures: 0,
+      runnable: false,
+      kind: "pipeline_definition",
+      validationMessage: "Pipeline definition loaded. Import a fitted portable execution result to enable automatic prediction.",
+      targetName: definition.targetName,
+    };
+  }
 }
 
 function extractPortableResult(raw: unknown): { name: string; axis?: number[]; result: PortableExecutionResult; targetName?: string } {
@@ -123,6 +155,23 @@ function extractPortableResult(raw: unknown): { name: string; axis?: number[]; r
     name: String(obj.pipelineName ?? obj.pipeline ?? result.name ?? "portable pipeline"),
     axis,
     result,
+    targetName: typeof obj.targetName === "string" ? obj.targetName : undefined,
+  };
+}
+
+function extractPipelineDefinition(raw: unknown): { name: string; targetName?: string } | null {
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as Record<string, unknown>;
+  const pipeline = obj.pipeline;
+  const hasPipelineDefinition =
+    Array.isArray(pipeline) ||
+    (pipeline != null && typeof pipeline === "object") ||
+    typeof obj.class === "string" ||
+    typeof obj.name === "string";
+  if (!hasPipelineDefinition) return null;
+  const candidate = pipeline && typeof pipeline === "object" && !Array.isArray(pipeline) ? (pipeline as Record<string, unknown>) : obj;
+  return {
+    name: String(obj.pipelineName ?? candidate.name ?? obj.name ?? "n4a pipeline definition"),
     targetName: typeof obj.targetName === "string" ? obj.targetName : undefined,
   };
 }
