@@ -1,0 +1,52 @@
+{
+  "name": "nirs4all-device",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cross-platform nirs4all mobile/tablet workbench for connected NIRS spectrometers.",
+  "license": "(CECILL-2.1 OR AGPL-3.0-or-later)",
+  "homepage": "https://github.com/GBeurier/nirs4all-device",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GBeurier/nirs4all-device.git"
+  },
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "cap:sync": "capacitor sync",
+    "cap:android": "capacitor run android",
+    "cap:ios": "capacitor run ios"
+  },
+  "dependencies": {
+    "@capacitor-community/bluetooth-le": "8.2.0",
+    "@capacitor/app": "8.1.0",
+    "@capacitor/core": "8.4.1",
+    "@capacitor/filesystem": "8.1.2",
+    "@capacitor/share": "8.0.1",
+    "@nirs4all/methods": "1.0.8",
+    "dag-ml-data-wasm": "^0.2.8",
+    "dag-ml-wasm": "^0.2.7",
+    "lucide-react": "1.23.0",
+    "nirs4all": "0.3.7",
+    "nirs4all-ui": "0.1.9",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "devDependencies": {
+    "@capacitor/android": "8.4.1",
+    "@capacitor/cli": "8.4.1",
+    "@capacitor/ios": "8.4.1",
+    "@types/node": "24.10.2",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.3",
+    "jsdom": "27.3.0",
+    "typescript": "7.0.2",
+    "vite": "8.1.4",
+    "vitest": "4.1.10"
+  }
+}
