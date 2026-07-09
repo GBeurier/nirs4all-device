@@ -9,8 +9,8 @@ jobs:
   debug-apk:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
@@ -34,7 +34,7 @@ jobs:
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon
       - name: Upload debug APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nirs4all-device-android-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
