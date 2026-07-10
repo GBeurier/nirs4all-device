@@ -25,6 +25,7 @@ import {
   Trash2,
   Upload,
   Usb,
+  X,
   XCircle,
   type LucideIcon,
 } from "lucide-react";
@@ -157,6 +158,8 @@ export default function App() {
   const [nextCaptureMetadata, setNextCaptureMetadata] = useState<Record<string, string>>({});
   const [overviewScope, setOverviewScope] = useState<BatchScope>("project");
   const [inspectedCaptureId, setInspectedCaptureId] = useState<string | null>(null);
+  const [namePrompt, setNamePrompt] = useState<"project" | "session" | null>(null);
+  const [nameDraft, setNameDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -361,32 +364,43 @@ export default function App() {
     [captures],
   );
 
-  const createNewProject = useCallback(async () => {
-    const name = window.prompt("Project name", `Project ${projects.length + 1}`)?.trim();
-    if (!name) return;
-    const project = createProject(name);
-    const session = createSession(project.id, "Session 1");
-    await Promise.all([store.saveProject(project), store.saveSession(session)]);
-    setProjects((prev) => [...prev, project]);
-    setSessions((prev) => [session, ...prev]);
-    setSelectedProjectId(project.id);
-    setSelectedSessionId(session.id);
-    setSelectedCaptureId(null);
-    setSelectedPipelineId(null);
-    setView("projects");
+  const createNewProject = useCallback(() => {
+    setNameDraft(`Project ${projects.length + 1}`);
+    setNamePrompt("project");
   }, [projects.length]);
 
-  const createNewSession = useCallback(async () => {
+  const createNewSession = useCallback(() => {
     if (!selectedProject) return;
     const count = sessions.filter((session) => session.projectId === selectedProject.id).length + 1;
-    const name = window.prompt("Session name", `Session ${count}`)?.trim();
-    if (!name) return;
+    setNameDraft(`Session ${count}`);
+    setNamePrompt("session");
+  }, [selectedProject, sessions]);
+
+  const confirmNamePrompt = useCallback(async () => {
+    const kind = namePrompt;
+    const name = nameDraft.trim();
+    setNamePrompt(null);
+    if (!kind || !name) return;
+    if (kind === "project") {
+      const project = createProject(name);
+      const session = createSession(project.id, "Session 1");
+      await Promise.all([store.saveProject(project), store.saveSession(session)]);
+      setProjects((prev) => [...prev, project]);
+      setSessions((prev) => [session, ...prev]);
+      setSelectedProjectId(project.id);
+      setSelectedSessionId(session.id);
+      setSelectedCaptureId(null);
+      setSelectedPipelineId(null);
+      setView("projects");
+      return;
+    }
+    if (!selectedProject) return;
     const session = createSession(selectedProject.id, name, selectedProject.metadata?.operator);
     await store.saveSession(session);
     setSessions((prev) => [session, ...prev]);
     setSelectedSessionId(session.id);
     setSelectedCaptureId(null);
-  }, [selectedProject, sessions]);
+  }, [nameDraft, namePrompt, selectedProject]);
 
   const updateProject = useCallback(
     async (patch: Partial<Project>) => {
@@ -493,6 +507,7 @@ export default function App() {
         setRepetitionId("1");
       }
       setView("scan");
+      revealScanResult();
     } catch (err) {
       setError(formatError(err));
     } finally {
@@ -510,6 +525,7 @@ export default function App() {
         const rawCapture = await device.readStoredScan(index, setProgress);
         await saveCompletedCapture(rawCapture);
         setView("scan");
+        revealScanResult();
       } catch (err) {
         setError(formatError(err));
       } finally {
@@ -587,7 +603,7 @@ export default function App() {
 
   return (
     <div className="app-shell n4-app n4-app-bg">
-      <div className="spectrum-strip" />
+      <div className="spectrum-strip n4-spectrum-strip" aria-hidden="true" />
       <header className="topbar">
         <div className="brand-mark" dangerouslySetInnerHTML={{ __html: logo }} />
         <div className="brand-copy">
@@ -621,9 +637,12 @@ export default function App() {
 
         <main className="workspace">
           {error && (
-            <div className="error-banner">
+            <div className="error-banner" role="alert">
               <XCircle size={18} />
               <span>{error}</span>
+              <button className="icon-button" title="Dismiss" aria-label="Dismiss error" onClick={() => setError(null)}>
+                <X size={16} />
+              </button>
             </div>
           )}
 
@@ -787,6 +806,7 @@ export default function App() {
                     <button
                       className="icon-button context-add"
                       title="Next sample ID"
+                      aria-label="Next sample ID"
                       onClick={() => {
                         setSampleId((current) => nextSampleId(current));
                         setRepetitionId("1");
@@ -802,9 +822,9 @@ export default function App() {
                   {repeatSample && (
                     <div className="select-action">
                       <Field label="Repetition">
-                        <input value={repetitionId} onChange={(event) => setRepetitionId(event.target.value)} />
+                        <input inputMode="numeric" value={repetitionId} onChange={(event) => setRepetitionId(event.target.value)} />
                       </Field>
-                      <button className="icon-button context-add" title="Next repetition" onClick={() => setRepetitionId((current) => nextRepetitionId(current))}>
+                      <button className="icon-button context-add" title="Next repetition" aria-label="Next repetition" onClick={() => setRepetitionId((current) => nextRepetitionId(current))}>
                         <Plus size={16} />
                       </button>
                     </div>
@@ -843,13 +863,13 @@ export default function App() {
                   {progress && <ProgressBar progress={progress} />}
                 </Panel>
 
-                <Panel title="Model Context" icon={Sparkles}>
+                <Panel title="Model Context" icon={Sparkles} className="panel-model-context">
                   <PipelineContext artifact={selectedPipeline} />
                 </Panel>
               </div>
 
               <div className="scan-results-column">
-                <Panel title="Spectrum" icon={Activity} wide>
+                <Panel title="Spectrum" icon={Activity} wide id="scan-spectrum">
                   <SpectrumView
                     capture={selectedCapture}
                     overlays={spectrumOverlays}
@@ -884,13 +904,36 @@ export default function App() {
           onClose={() => setInspectedCaptureId(null)}
         />
       )}
+      {namePrompt && (
+        <NameDialog
+          title={namePrompt === "project" ? "New project" : "New session"}
+          value={nameDraft}
+          onChange={setNameDraft}
+          onCancel={() => setNamePrompt(null)}
+          onConfirm={() => void confirmNamePrompt()}
+        />
+      )}
     </div>
   );
 }
 
-function Panel({ title, icon: Icon, wide = false, children }: { title: string; icon: LucideIcon; wide?: boolean; children: ReactNode }) {
+function Panel({
+  title,
+  icon: Icon,
+  wide = false,
+  id,
+  className,
+  children,
+}: {
+  title: string;
+  icon: LucideIcon;
+  wide?: boolean;
+  id?: string;
+  className?: string;
+  children: ReactNode;
+}) {
   return (
-    <section className={wide ? "panel wide" : "panel"}>
+    <section id={id} className={["panel", wide ? "wide" : "", className ?? ""].filter(Boolean).join(" ")}>
       <div className="panel-header">
         <Icon size={18} />
         <h2>{title}</h2>
@@ -1006,7 +1049,7 @@ function ProjectSessionPanel({
             ))}
           </select>
         </Field>
-        <button className="icon-button context-add" title="New project" onClick={onNewProject}>
+        <button className="icon-button context-add" title="New project" aria-label="New project" onClick={onNewProject}>
           <Plus size={16} />
         </button>
       </div>
@@ -1020,7 +1063,7 @@ function ProjectSessionPanel({
             ))}
           </select>
         </Field>
-        <button className="icon-button context-add" title="New session" onClick={onNewSession}>
+        <button className="icon-button context-add" title="New session" aria-label="New session" onClick={onNewSession}>
           <Plus size={16} />
         </button>
       </div>
@@ -1138,7 +1181,7 @@ function BatchCaptureTable({
             <span>{capture.quality?.status ?? "no QC"}</span>
             <span>{capture.prediction ? formatNumber(capture.prediction.value) : "no prediction"}</span>
           </button>
-          <button className="batch-inspect icon-button" title={`Inspect ${formatCaptureLabel(capture)}`} onClick={() => onInspect(capture.id)}>
+          <button className="batch-inspect icon-button" title={`Inspect ${formatCaptureLabel(capture)}`} aria-label={`Inspect ${formatCaptureLabel(capture)}`} onClick={() => onInspect(capture.id)}>
             <Maximize2 size={15} />
           </button>
         </div>
@@ -1215,7 +1258,12 @@ function PipelineContext({ artifact }: { artifact: PipelineArtifact | null }) {
 
 function StatusPill({ state }: { state: DeviceConnectionState }) {
   const text = state === "busy" ? "busy" : state === "connected" ? "connected" : state === "error" ? "attention" : state;
-  return <span className={`status-pill ${state}`}>{text}</span>;
+  return (
+    <span className={`status-pill ${state}`}>
+      <i className="dot" aria-hidden="true" />
+      {text}
+    </span>
+  );
 }
 
 function MiniStat({ icon: Icon, text }: { icon: LucideIcon; text: string }) {
@@ -1279,7 +1327,14 @@ function ProgressBar({ progress }: { progress: ScanProgress }) {
         <span>{progress.phase}</span>
         <span>{Math.round(progress.pct)}%</span>
       </div>
-      <div className="progress-track">
+      <div
+        className="progress-track"
+        role="progressbar"
+        aria-label={progress.phase}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(progress.pct)}
+      >
         <div style={{ width: `${progress.pct}%` }} />
       </div>
     </div>
@@ -1401,6 +1456,7 @@ function SpectrumDetailDialog({
   overlays: SpectrumEnvelope[];
   onClose: () => void;
 }) {
+  useCloseOnEscape(onClose);
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose();
@@ -1411,8 +1467,8 @@ function SpectrumDetailDialog({
             <strong>{formatCaptureLabel(capture)}</strong>
             <span>{new Date(capture.createdAt).toLocaleString()}</span>
           </div>
-          <button className="icon-button" title="Close" onClick={onClose}>
-            <XCircle size={17} />
+          <button className="icon-button" title="Close" aria-label="Close spectrum detail" onClick={onClose}>
+            <X size={18} />
           </button>
         </div>
         <div className="dialog-grid">
@@ -1522,9 +1578,7 @@ function CaptureList({
             <span>{new Date(capture.createdAt).toLocaleString()}</span>
             <span>{capture.spectrum ? `${capture.spectrum.values.length} bands` : "raw payload"} - {capture.quality?.status ?? "no QC"}</span>
           </button>
-          <button className="icon-button" title="Delete capture" onClick={() => onDelete(capture.id)}>
-            <Trash2 size={16} />
-          </button>
+          <ConfirmDeleteButton label={`Delete ${formatCaptureLabel(capture)}`} onConfirm={() => onDelete(capture.id)} />
         </div>
       ))}
     </div>
@@ -1580,6 +1634,90 @@ function FileImportButton({ label, onFile }: { label: string; onFile: (file: Fil
 
 function EmptyState({ text }: { text: string }) {
   return <div className="empty-state">{text}</div>;
+}
+
+function NameDialog({
+  title,
+  value,
+  onChange,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  value: string;
+  onChange: (value: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  useCloseOnEscape(onCancel);
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onCancel();
+    }}>
+      <form
+        className="name-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        onSubmit={(event) => {
+          event.preventDefault();
+          onConfirm();
+        }}
+      >
+        <strong>{title}</strong>
+        <input
+          autoFocus
+          value={value}
+          onFocus={(event) => event.currentTarget.select()}
+          onChange={(event) => onChange(event.target.value)}
+        />
+        <div className="dialog-actions">
+          <button type="button" className="ghost-button" onClick={onCancel}>
+            Cancel
+          </button>
+          <button type="submit" className="primary-button" disabled={!value.trim()}>
+            Create
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function ConfirmDeleteButton({ label, onConfirm }: { label: string; onConfirm: () => void }) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const timer = window.setTimeout(() => setArmed(false), 2600);
+    return () => window.clearTimeout(timer);
+  }, [armed]);
+  return (
+    <button
+      className={armed ? "icon-button danger-armed" : "icon-button"}
+      title={armed ? "Tap again to confirm" : label}
+      aria-label={armed ? `Confirm: ${label}` : label}
+      onClick={() => (armed ? onConfirm() : setArmed(true))}
+    >
+      <Trash2 size={16} />
+    </button>
+  );
+}
+
+function useCloseOnEscape(onClose: () => void) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+}
+
+function revealScanResult() {
+  if (!window.matchMedia("(max-width: 820px)").matches) return;
+  window.setTimeout(() => {
+    document.getElementById("scan-spectrum")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, 80);
 }
 
 function buildOverlay(captures: SpectrumCapture[], selectedCapture: SpectrumCapture | null, label: string): SpectrumEnvelope | null {
