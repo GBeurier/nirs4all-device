@@ -28,7 +28,7 @@ import {
   XCircle,
   type LucideIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Capacitor } from "@capacitor/core";
 import { brand } from "nirs4all-ui";
 import { CapacitorBleTransport } from "@/device/capacitorBleTransport";
@@ -253,7 +253,7 @@ export default function App() {
   );
   const inspectedOverlays = [inspectedProjectEnvelope, inspectedSessionEnvelope].filter(Boolean) as SpectrumEnvelope[];
   const logo = useMemo(
-    () => brand.generateNirs4allBrandSvg("nirs4all", { variant: "icon", title: "nirs4all Device" }),
+    () => brand.generateNirs4allBrandSvg("nirs4all", { variant: "icon", title: "nirs4all Device", animated: true }),
     [],
   );
 
@@ -586,7 +586,7 @@ export default function App() {
   );
 
   return (
-    <div className="app-shell">
+    <div className="app-shell n4-app n4-app-bg">
       <div className="spectrum-strip" />
       <header className="topbar">
         <div className="brand-mark" dangerouslySetInnerHTML={{ __html: logo }} />
@@ -606,7 +606,12 @@ export default function App() {
           {views.map((item) => {
             const Icon = item.icon;
             return (
-              <button key={item.id} className={view === item.id ? "rail-item active" : "rail-item"} onClick={() => setView(item.id)}>
+              <button
+                key={item.id}
+                className={view === item.id ? "rail-item active" : "rail-item"}
+                onClick={() => setView(item.id)}
+                aria-current={view === item.id ? "page" : undefined}
+              >
                 <Icon size={18} />
                 <span>{item.label}</span>
               </button>
@@ -752,6 +757,12 @@ export default function App() {
           {view === "scan" && (
             <section className="scan-page">
               <div className="scan-control-column">
+                <CaptureReadiness
+                  connected={connected}
+                  session={selectedSession}
+                  deviceName={device?.descriptor.name ?? selectedDeviceOption.title}
+                  onOpenConnection={() => setView("connection")}
+                />
                 <Panel title="Capture" icon={ScanLine}>
                   <ProjectSessionPanel
                     projects={projects}
@@ -788,13 +799,19 @@ export default function App() {
                     <input type="checkbox" checked={repeatSample} onChange={(event) => setRepeatSample(event.target.checked)} />
                     <span>Repeat sample</span>
                   </label>
-                  <div className="select-action">
-                    <Field label="Repetition">
-                      <input value={repetitionId} onChange={(event) => setRepetitionId(event.target.value)} />
-                    </Field>
-                    <button className="icon-button context-add" title="Next repetition" onClick={() => setRepetitionId((current) => nextRepetitionId(current))}>
-                      <Plus size={16} />
-                    </button>
+                  {repeatSample && (
+                    <div className="select-action">
+                      <Field label="Repetition">
+                        <input value={repetitionId} onChange={(event) => setRepetitionId(event.target.value)} />
+                      </Field>
+                      <button className="icon-button context-add" title="Next repetition" onClick={() => setRepetitionId((current) => nextRepetitionId(current))}>
+                        <Plus size={16} />
+                      </button>
+                    </div>
+                  )}
+                  <div className="capture-sequence" aria-live="polite">
+                    <span>Next</span>
+                    <strong>{sampleId}{repeatSample ? `, rep ${repetitionId}` : ""}</strong>
                   </div>
                   <Field label="Configuration">
                     <select value={configId} onChange={(event) => setConfigId(event.target.value)} disabled={configs.length === 0}>
@@ -813,11 +830,16 @@ export default function App() {
                     <input type="checkbox" checked={saveToDevice} onChange={(event) => setSaveToDevice(event.target.checked)} />
                     <span>Save on device SD</span>
                   </label>
-                  <MetadataFields values={nextCaptureMetadata} fields={nextCaptureMetadataFields} onChange={(key, value) => setNextCaptureMetadata((prev) => ({ ...prev, [key]: value }))} />
-                  <button className="primary-button scan-button" disabled={!connected || state === "busy" || !selectedSession} onClick={runScan}>
-                    {state === "busy" ? <Loader2 className="spin" size={18} /> : <Play size={18} />}
-                    Start scan
-                  </button>
+                  <details className="metadata-disclosure">
+                    <summary>Capture metadata <span>optional</span></summary>
+                    <MetadataFields values={nextCaptureMetadata} fields={nextCaptureMetadataFields} onChange={(key, value) => setNextCaptureMetadata((prev) => ({ ...prev, [key]: value }))} />
+                  </details>
+                  <div className="capture-submit">
+                    <button className="primary-button scan-button" disabled={!connected || state === "busy" || !selectedSession} onClick={runScan}>
+                      {state === "busy" ? <Loader2 className="spin" size={18} /> : <Play size={18} />}
+                      Capture spectrum
+                    </button>
+                  </div>
                   {progress && <ProgressBar progress={progress} />}
                 </Panel>
 
@@ -875,6 +897,41 @@ function Panel({ title, icon: Icon, wide = false, children }: { title: string; i
       </div>
       {children}
     </section>
+  );
+}
+
+function CaptureReadiness({
+  connected,
+  session,
+  deviceName,
+  onOpenConnection,
+}: {
+  connected: boolean;
+  session: CaptureSession | null;
+  deviceName: string;
+  onOpenConnection: () => void;
+}) {
+  if (!connected) {
+    return (
+      <button className="capture-readiness action" onClick={onOpenConnection}>
+        <RadioTower size={18} />
+        <span><strong>Device not connected</strong><small>Choose and connect a device before capturing.</small></span>
+      </button>
+    );
+  }
+  if (!session) {
+    return (
+      <div className="capture-readiness warning">
+        <Info size={18} />
+        <span><strong>Choose a session</strong><small>Every capture is stored in the active project and session.</small></span>
+      </div>
+    );
+  }
+  return (
+    <div className="capture-readiness ready">
+      <CheckCircle2 size={18} />
+      <span><strong>{deviceName} ready</strong><small>{session.name || "Untitled session"}</small></span>
+    </div>
   );
 }
 
@@ -1072,17 +1129,19 @@ function BatchCaptureTable({
   return (
     <div className="batch-capture-table">
       {captures.slice(0, 8).map((capture) => (
-        <button
+        <div
           key={capture.id}
           className={capture.id === selectedId ? "batch-row active" : "batch-row"}
-          onClick={() => onSelect(capture.id)}
-          onDoubleClick={() => onInspect(capture.id)}
         >
-          <strong>{formatCaptureLabel(capture)}</strong>
-          <span>{capture.quality?.status ?? "no QC"}</span>
-          <span>{capture.prediction ? formatNumber(capture.prediction.value) : "no prediction"}</span>
-          <Maximize2 size={15} />
-        </button>
+          <button className="batch-select" onClick={() => onSelect(capture.id)}>
+            <strong>{formatCaptureLabel(capture)}</strong>
+            <span>{capture.quality?.status ?? "no QC"}</span>
+            <span>{capture.prediction ? formatNumber(capture.prediction.value) : "no prediction"}</span>
+          </button>
+          <button className="batch-inspect icon-button" title={`Inspect ${formatCaptureLabel(capture)}`} onClick={() => onInspect(capture.id)}>
+            <Maximize2 size={15} />
+          </button>
+        </div>
       ))}
     </div>
   );
@@ -1250,38 +1309,30 @@ function SpectrumView({
     return `${x.toFixed(3)},${y.toFixed(3)}`;
   };
   const points = values.map(point).join(" ");
-  const interactive = Boolean(onInspect);
-  const inspect = () => onInspect?.();
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (!interactive) return;
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      inspect();
-    }
-  };
   return (
-    <div
-      className={interactive ? "spectrum-view interactive" : "spectrum-view"}
-      role={interactive ? "button" : undefined}
-      tabIndex={interactive ? 0 : undefined}
-      onClick={interactive ? inspect : undefined}
-      onKeyDown={interactive ? onKeyDown : undefined}
-    >
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Spectrum">
-        {overlays.map((overlay) => {
-          const cls = overlay.label.toLowerCase();
-          const upper = overlay.upper.map(point);
-          const lower = overlay.lower.map(point).reverse();
-          const median = overlay.median.map(point).join(" ");
-          return (
-            <g key={overlay.label} className={`quantile-overlay ${cls}`}>
-              <polygon points={[...upper, ...lower].join(" ")} />
-              <polyline points={median} />
-            </g>
-          );
-        })}
-        <polyline points={points} />
-      </svg>
+    <div className="spectrum-view">
+      <div className="spectrum-plot">
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Spectrum">
+          {overlays.map((overlay) => {
+            const cls = overlay.label.toLowerCase();
+            const upper = overlay.upper.map(point);
+            const lower = overlay.lower.map(point).reverse();
+            const median = overlay.median.map(point).join(" ");
+            return (
+              <g key={overlay.label} className={`quantile-overlay ${cls}`}>
+                <polygon points={[...upper, ...lower].join(" ")} />
+                <polyline points={median} />
+              </g>
+            );
+          })}
+          <polyline points={points} />
+        </svg>
+        {onInspect && (
+          <button className="spectrum-inspect icon-button" title="Inspect spectrum" aria-label="Inspect spectrum" onClick={onInspect}>
+            <Maximize2 size={17} />
+          </button>
+        )}
+      </div>
       <div className="spectrum-meta">
         <span>{axis[0]?.toFixed(0)}-{axis.at(-1)?.toFixed(0)} {capture.spectrum.axisUnit}</span>
         {repetition && <span>rep {repetition}</span>}
@@ -1290,7 +1341,6 @@ function SpectrumView({
         {overlays.map((overlay) => (
           <span key={overlay.label}>{overlay.label} q10-q90{overlay.count ? ` n=${overlay.count}` : ""}</span>
         ))}
-        {interactive && <span>Inspect</span>}
       </div>
     </div>
   );

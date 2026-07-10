@@ -1,38 +1,40 @@
+@import "nirs4all-ui/assets/theme.css";
+
 :root {
-  --font-display: "IBM Plex Sans", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
-  --brand-teal: #0d9488;
-  --brand-teal-d: #0f766e;
-  --brand-teal-l: #2dd4bf;
-  --brand-green: #10b981;
-  --brand-amber: #d97706;
-  --paper: #f7faf9;
-  --paper-2: #edf5f2;
-  --background: #f7faf9;
-  --foreground: #0f172a;
-  --card: #ffffff;
-  --muted: #f5f7fa;
-  --muted-foreground: #64748b;
-  --border: #e2e8f0;
-  --danger: #e11d48;
-  --shadow: 0 18px 45px -32px rgba(15, 23, 42, 0.45);
+  /* App aliases deliberately map to the shared nirs4all-ui visual system. */
+  --font-display: var(--display);
+  --font-sans: var(--font);
+  --font-mono: var(--mono);
+  --brand-teal: var(--teal);
+  --brand-teal-d: var(--teal-d);
+  --brand-teal-l: var(--teal-l);
+  --brand-cyan: var(--cyan);
+  --brand-indigo: var(--indigo);
+  --brand-green: var(--green);
+  --brand-amber: var(--amber);
+  --background: var(--paper);
+  --foreground: var(--text);
+  --card: var(--surface);
+  --muted: var(--bg-alt);
+  --muted-foreground: var(--text-3);
+  --danger: var(--rose);
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0b1626;
-    --foreground: #eef4fb;
-    --card: #0f1d30;
-    --muted: #13233a;
-    --muted-foreground: #8ba0bb;
-    --border: #1d2c44;
+    --background: #0b1220;
+    --foreground: rgba(255, 255, 255, 0.92);
+    --card: #10233a;
+    --muted: #0d1a2c;
+    --muted-foreground: rgba(255, 255, 255, 0.48);
+    --border: rgba(255, 255, 255, 0.1);
     --paper: #0b1626;
-    --paper-2: #0f1d30;
     --brand-teal: #2dd4bf;
-    --brand-teal-d: #14b8a6;
+    --brand-teal-d: #5eead4;
     --brand-teal-l: #5eead4;
+    --brand-cyan: #22d3ee;
+    --brand-indigo: #818cf8;
     color-scheme: dark;
   }
 }
@@ -49,20 +51,26 @@ body {
 button, input, select { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: 0.55; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--brand-cyan) 65%, transparent);
+  outline-offset: 2px;
+}
 
 .app-shell {
   min-height: 100vh;
   max-width: 100%;
   overflow-x: hidden;
   background-image:
+    radial-gradient(ellipse 90% 45% at 50% -8%, color-mix(in oklab, var(--brand-teal) 8%, transparent), transparent 70%),
     linear-gradient(color-mix(in oklab, var(--foreground) 3.5%, transparent) 1px, transparent 1px),
     linear-gradient(90deg, color-mix(in oklab, var(--foreground) 3.5%, transparent) 1px, transparent 1px);
-  background-size: 52px 52px, 52px 52px;
+  background-size: 100% 100%, 52px 52px, 52px 52px;
 }
 
 .spectrum-strip {
-  height: 6px;
-  background: linear-gradient(90deg, var(--brand-teal-d), var(--brand-teal), var(--brand-teal-l));
+  height: 3px;
+  background: linear-gradient(90deg, var(--brand-teal-d), var(--brand-teal), var(--brand-cyan), var(--brand-green));
+  background-size: 200% 100%;
 }
 
 .topbar {
@@ -72,8 +80,8 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   display: flex;
   align-items: center;
   gap: 12px;
-  height: 62px;
-  padding: 0 max(16px, env(safe-area-inset-left)) 0 16px;
+  min-height: 62px;
+  padding: max(0px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
   border-bottom: 1px solid color-mix(in oklab, var(--border) 86%, transparent);
   background: color-mix(in oklab, var(--card) 82%, transparent);
   backdrop-filter: blur(14px);
@@ -92,16 +100,16 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   font-family: var(--font-display);
   font-size: 18px;
   letter-spacing: 0;
-  color: var(--brand-teal-d);
+  color: var(--foreground);
 }
 .brand-copy span {
-  border: 1px solid color-mix(in oklab, var(--brand-teal) 30%, var(--border));
+  border: 1px solid color-mix(in oklab, var(--brand-cyan) 35%, var(--border));
   border-radius: 999px;
   padding: 2px 7px;
   font-size: 11px;
   font-weight: 700;
-  color: var(--brand-teal-d);
-  background: color-mix(in oklab, var(--brand-teal) 9%, transparent);
+  color: var(--cyan-d);
+  background: color-mix(in oklab, var(--brand-cyan) 9%, transparent);
 }
 .topbar-status { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 
@@ -175,6 +183,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   margin-bottom: 14px;
   color: var(--brand-teal-d);
 }
+.panel-header svg { color: var(--brand-cyan); }
 .panel-header h2 {
   margin: 0;
   font-size: 15px;
@@ -240,6 +249,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   background: var(--brand-teal);
   color: #fff;
 }
+.primary-button:hover:not(:disabled) { background: var(--brand-teal-d); }
 .ghost-button, .file-button {
   border: 1px solid var(--border);
   background: var(--card);
@@ -279,6 +289,59 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .switch-line input { width: 18px; height: 18px; accent-color: var(--brand-teal); }
 
 .metadata-grid { display: grid; gap: 2px; }
+.metadata-disclosure {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.metadata-disclosure summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--foreground);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+}
+.metadata-disclosure summary span { color: var(--muted-foreground); font-size: 12px; font-weight: 700; }
+.metadata-disclosure .metadata-grid { margin-top: 8px; }
+.capture-sequence {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  border-left: 3px solid var(--brand-cyan);
+  padding: 7px 9px;
+  background: color-mix(in oklab, var(--brand-cyan) 6%, var(--card));
+}
+.capture-sequence span { color: var(--muted-foreground); font-size: 12px; font-weight: 800; }
+.capture-sequence strong { font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
+.capture-submit { margin-top: 12px; }
+
+.capture-readiness {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 62px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--foreground);
+  background: color-mix(in oklab, var(--card) 92%, transparent);
+  text-align: left;
+}
+.capture-readiness span { display: grid; gap: 2px; min-width: 0; }
+.capture-readiness strong { font-size: 13px; }
+.capture-readiness small { color: var(--muted-foreground); font-size: 12px; overflow-wrap: anywhere; }
+.capture-readiness.ready { border-color: color-mix(in oklab, var(--brand-teal) 38%, var(--border)); }
+.capture-readiness.ready > svg { color: var(--brand-teal); }
+.capture-readiness.warning { border-color: color-mix(in oklab, var(--brand-amber) 38%, var(--border)); }
+.capture-readiness.warning > svg { color: var(--brand-amber); }
+.capture-readiness.action { border-color: color-mix(in oklab, var(--brand-cyan) 42%, var(--border)); }
+.capture-readiness.action > svg { color: var(--brand-cyan); }
+.capture-readiness.action:hover { background: color-mix(in oklab, var(--brand-cyan) 8%, var(--card)); }
 
 .compat-note {
   display: flex;
@@ -345,14 +408,10 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .progress-track div { height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--brand-teal), var(--brand-teal-l)); }
 
 .spectrum-view { display: grid; gap: 10px; min-height: 300px; }
-.spectrum-view.interactive { cursor: zoom-in; }
-.spectrum-view.interactive:focus-visible {
-  outline: 2px solid var(--brand-teal);
-  outline-offset: 3px;
-  border-radius: 8px;
-}
-.spectrum-view svg {
+.spectrum-plot { position: relative; }
+.spectrum-plot svg {
   width: 100%;
+  display: block;
   min-height: 260px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -365,10 +424,11 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .spectrum-view polyline { fill: none; stroke: var(--brand-teal); stroke-width: 1.8; vector-effect: non-scaling-stroke; }
 .spectrum-view .quantile-overlay polygon { vector-effect: non-scaling-stroke; }
 .spectrum-view .quantile-overlay polyline { stroke-width: 1.1; stroke-dasharray: 3 3; opacity: 0.9; }
-.spectrum-view .quantile-overlay.project polygon { fill: color-mix(in oklab, #2563eb 20%, transparent); stroke: color-mix(in oklab, #2563eb 35%, transparent); }
-.spectrum-view .quantile-overlay.project polyline { stroke: #2563eb; }
-.spectrum-view .quantile-overlay.session polygon { fill: color-mix(in oklab, #d97706 24%, transparent); stroke: color-mix(in oklab, #d97706 36%, transparent); }
-.spectrum-view .quantile-overlay.session polyline { stroke: #d97706; }
+.spectrum-view .quantile-overlay.project polygon { fill: color-mix(in oklab, var(--brand-cyan) 20%, transparent); stroke: color-mix(in oklab, var(--brand-cyan) 38%, transparent); }
+.spectrum-view .quantile-overlay.project polyline { stroke: var(--brand-cyan); }
+.spectrum-view .quantile-overlay.session polygon { fill: color-mix(in oklab, var(--brand-indigo) 18%, transparent); stroke: color-mix(in oklab, var(--brand-indigo) 36%, transparent); }
+.spectrum-view .quantile-overlay.session polyline { stroke: var(--brand-indigo); }
+.spectrum-inspect { position: absolute; top: 10px; right: 10px; background: color-mix(in oklab, var(--card) 90%, transparent); }
 .spectrum-meta { display: flex; flex-wrap: wrap; gap: 8px; color: var(--muted-foreground); font-size: 12px; font-weight: 700; }
 .spectrum-meta span { border: 1px solid var(--border); border-radius: 999px; padding: 4px 8px; background: var(--card); }
 
@@ -491,7 +551,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .batch-capture-table { display: grid; gap: 6px; }
 .batch-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(74px, 0.5fr) minmax(94px, 0.6fr) 24px;
+  grid-template-columns: minmax(0, 1fr) 34px;
   align-items: center;
   gap: 8px;
   min-height: 42px;
@@ -499,12 +559,24 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   border-radius: 8px;
   padding: 0 10px;
   background: var(--card);
-  color: var(--foreground);
-  text-align: left;
 }
 .batch-row.active { border-color: var(--brand-teal); }
+.batch-select {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(74px, 0.5fr) minmax(94px, 0.6fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  color: var(--foreground);
+  background: transparent;
+  text-align: left;
+}
 .batch-row span { color: var(--muted-foreground); font-size: 12px; font-weight: 700; }
 .batch-row svg { color: var(--muted-foreground); }
+.batch-inspect { width: 30px; height: 30px; }
 .dataset-metrics {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -637,19 +709,25 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   .workspace { padding: 12px; }
   .screen-grid, .connection-page, .projects-page, .scan-page, .capture-workbench, .analysis-grid { grid-template-columns: 1fr; }
   .topbar-status .mini-stat { display: none; }
-  .brand-copy span { display: none; }
   .transport-grid, .device-option-grid { grid-template-columns: 1fr; }
   .quality-view, .quality-view.compact { grid-template-columns: 1fr; }
   .dialog-grid { grid-template-columns: 1fr; }
-  .batch-row { grid-template-columns: minmax(0, 1fr) 70px 24px; }
-  .batch-row span:nth-of-type(2) { display: none; }
+  .batch-select { grid-template-columns: minmax(0, 1fr) 70px; }
+  .batch-select span:nth-of-type(2) { display: none; }
   .compact-toolbar .ghost-button { flex: 1 1 145px; }
 }
 
 @media (max-width: 620px) {
-  .select-action { grid-template-columns: minmax(0, 1fr); }
-  .context-add { width: 100%; }
+  .select-action { grid-template-columns: minmax(0, 1fr) 38px; }
+  .context-add { width: 38px; }
   .topbar-status { display: none; }
   .segmented-control { grid-template-columns: 1fr; }
   .modal-backdrop { padding: 8px; }
+  .capture-submit {
+    position: sticky;
+    bottom: calc(76px + env(safe-area-inset-bottom));
+    z-index: 2;
+    padding-top: 8px;
+    background: linear-gradient(180deg, color-mix(in oklab, var(--card) 0%, transparent), var(--card) 35%);
+  }
 }
