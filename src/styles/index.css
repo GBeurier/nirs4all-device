@@ -286,10 +286,25 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .ghost-button.full, .primary-button.full, .file-button { width: 100%; margin-top: 8px; }
 .file-button input { display: none; }
+.capture-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+.capture-actions .action-label { display: grid; gap: 1px; min-width: 0; text-align: left; }
+.capture-actions .action-label strong { font-size: 15px; line-height: 1.15; }
+.capture-actions .action-label small {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.82;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .scan-button {
-  width: 100%;
-  margin-top: 12px;
-  min-height: 52px;
+  min-height: 54px;
   font-size: 16px;
   border-color: transparent;
   background: linear-gradient(130deg, var(--brand-teal-d) 0%, var(--brand-teal) 55%, var(--brand-cyan) 135%);
@@ -298,6 +313,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .scan-button:hover:not(:disabled) {
   background: linear-gradient(130deg, var(--brand-teal-d) 0%, var(--brand-teal-d) 55%, var(--brand-cyan) 135%);
 }
+.repeat-button {
+  min-height: 54px;
+  border-color: color-mix(in oklab, var(--brand-teal) 45%, var(--border));
+  color: var(--brand-teal-d);
+  background: color-mix(in oklab, var(--brand-teal) 7%, var(--card));
+}
+.repeat-button:hover:not(:disabled) { background: color-mix(in oklab, var(--brand-teal) 13%, var(--card)); }
+.capture-identity { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 10px; }
 .icon-button {
   width: 34px;
   height: 34px;
@@ -353,18 +376,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .metadata-disclosure summary span::after { content: " ▸"; color: var(--brand-teal-d); }
 .metadata-disclosure[open] summary span::after { content: " ▾"; }
 .metadata-disclosure .metadata-grid { margin-top: 8px; }
-.capture-sequence {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  margin-top: 10px;
-  border-left: 3px solid var(--brand-cyan);
-  padding: 7px 9px;
-  background: color-mix(in oklab, var(--brand-cyan) 6%, var(--card));
-}
-.capture-sequence span { color: var(--muted-foreground); font-size: 12px; font-weight: 800; }
-.capture-sequence strong { font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
 .capture-submit { margin-top: 12px; }
 
 .capture-readiness {
@@ -660,7 +671,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .metric-card span, .metric-card small { color: var(--muted-foreground); font-size: 12px; font-weight: 700; }
 .metric-card strong { font-family: var(--font-display); font-size: 26px; line-height: 1; color: var(--brand-teal-d); }
-.metric-card strong, .metric strong, .quality-score strong, .prediction-result strong, .capture-sequence strong {
+.metric-card strong, .metric strong, .quality-score strong, .prediction-result strong {
   font-variant-numeric: tabular-nums;
 }
 .dataset-detail-row {
@@ -851,7 +862,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .switch-line { min-height: 44px; margin-top: 8px; }
   .switch-line input { width: 20px; height: 20px; }
   .primary-button, .ghost-button, .file-button { min-height: 46px; }
-  .scan-button { min-height: 54px; }
+  .scan-button, .repeat-button { min-height: 56px; }
   .slot-grid button { min-height: 46px; }
   .segmented-control button { min-height: 42px; font-size: 13px; }
   .metadata-disclosure summary { min-height: 42px; align-items: center; }

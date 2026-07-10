@@ -19,6 +19,7 @@ import {
   Play,
   Plus,
   RadioTower,
+  Repeat,
   Save,
   ScanLine,
   Sparkles,
@@ -61,6 +62,7 @@ import { buildExport, exportTextFile, type ExportKind } from "@/storage/export";
 
 type ViewId = "projects" | "connection" | "scan";
 type BatchScope = "project" | "session";
+type ScanMode = "capture" | "repeat";
 
 type MetadataField = {
   key: string;
@@ -143,8 +145,7 @@ export default function App() {
   const [configs, setConfigs] = useState<ScanConfiguration[]>([]);
   const [configId, setConfigId] = useState("0");
   const [sampleId, setSampleId] = useState("sample-001");
-  const [repeatSample, setRepeatSample] = useState(false);
-  const [repetitionId, setRepetitionId] = useState("1");
+  const [scanMode, setScanMode] = useState<ScanMode | null>(null);
   const [saveToDevice, setSaveToDevice] = useState(false);
   const [progress, setProgress] = useState<ScanProgress | null>(null);
   const [captures, setCaptures] = useState<SpectrumCapture[]>([]);
@@ -255,6 +256,8 @@ export default function App() {
     [inspectedCapture, inspectedSessionCaptures],
   );
   const inspectedOverlays = [inspectedProjectEnvelope, inspectedSessionEnvelope].filter(Boolean) as SpectrumEnvelope[];
+  const lastSessionCapture = sessionCaptures[0] ?? null;
+  const repeatRepetition = lastSessionCapture ? nextRepetitionId(captureRepetition(lastSessionCapture) || "1") : null;
   const logo = useMemo(
     () => brand.generateNirs4allBrandSvg("nirs4all", { variant: "icon", title: "nirs4all Device", animated: true }),
     [],
@@ -402,52 +405,60 @@ export default function App() {
     setSelectedCaptureId(null);
   }, [nameDraft, namePrompt, selectedProject]);
 
+  /* Editable fields update React state synchronously and persist in the background;
+   * awaiting IndexedDB before setState loses keystrokes typed while a save is in flight. */
   const updateProject = useCallback(
-    async (patch: Partial<Project>) => {
+    (patch: Partial<Project>) => {
       if (!selectedProject) return;
       const project = { ...selectedProject, ...patch };
-      await store.saveProject(project);
       setProjects((prev) => prev.map((item) => (item.id === project.id ? project : item)));
+      void store.saveProject(project).catch((err) => setError(formatError(err)));
     },
     [selectedProject],
   );
 
   const updateProjectMetadata = useCallback(
-    async (key: string, value: string) => {
+    (key: string, value: string) => {
       if (!selectedProject) return;
-      const metadata = cleanMetadata({ ...selectedProject.metadata, [key]: value });
-      await updateProject({ metadata });
+      updateProject({ metadata: cleanMetadata({ ...selectedProject.metadata, [key]: value }) });
     },
     [selectedProject, updateProject],
   );
 
   const updateSession = useCallback(
-    async (patch: Partial<CaptureSession>) => {
+    (patch: Partial<CaptureSession>) => {
       if (!selectedSession) return;
       const session = { ...selectedSession, ...patch };
-      await store.saveSession(session);
       setSessions((prev) => prev.map((item) => (item.id === session.id ? session : item)));
+      void store.saveSession(session).catch((err) => setError(formatError(err)));
     },
     [selectedSession],
   );
 
   const updateSessionMetadata = useCallback(
-    async (key: string, value: string) => {
+    (key: string, value: string) => {
       if (!selectedSession) return;
-      const metadata = cleanMetadata({ ...selectedSession.metadata, [key]: value });
-      await updateSession({ metadata });
+      updateSession({ metadata: cleanMetadata({ ...selectedSession.metadata, [key]: value }) });
     },
     [selectedSession, updateSession],
   );
 
-  const updateSelectedCaptureMetadata = useCallback(
-    async (key: string, value: string) => {
+  const updateSelectedCapture = useCallback(
+    (patch: Partial<SpectrumCapture>) => {
       if (!selectedCapture) return;
-      const capture = { ...selectedCapture, metadata: cleanMetadata({ ...selectedCapture.metadata, [key]: value }) };
-      await store.saveCapture(capture);
+      const capture = { ...selectedCapture, ...patch };
       setCaptures((prev) => prev.map((item) => (item.id === capture.id ? capture : item)));
+      void store.saveCapture(capture).catch((err) => setError(formatError(err)));
     },
     [selectedCapture],
+  );
+
+  const updateSelectedCaptureMetadata = useCallback(
+    (key: string, value: string) => {
+      if (!selectedCapture) return;
+      updateSelectedCapture({ metadata: cleanMetadata({ ...selectedCapture.metadata, [key]: value }) });
+    },
+    [selectedCapture, updateSelectedCapture],
   );
 
   const selectPipeline = useCallback(
@@ -462,7 +473,7 @@ export default function App() {
   );
 
   const saveCompletedCapture = useCallback(
-    async (rawCapture: SpectrumCapture): Promise<SpectrumCapture> => {
+    async (rawCapture: SpectrumCapture, repetition: string): Promise<SpectrumCapture> => {
       const quality = await qualityEngine.evaluate(rawCapture);
       let capture: SpectrumCapture = {
         ...rawCapture,
@@ -472,7 +483,7 @@ export default function App() {
           operator: selectedSession?.metadata?.operator ?? selectedProject?.metadata?.operator ?? "",
           location: selectedSession?.metadata?.location ?? selectedProject?.metadata?.location ?? "",
           ...nextCaptureMetadata,
-          repetition: repetitionId,
+          repetition,
         }),
         quality,
       };
@@ -489,32 +500,36 @@ export default function App() {
       setNextCaptureMetadata((prev) => ({ ...prev, observation: "", sample_label: "", lot: "" }));
       return capture;
     },
-    [nextCaptureMetadata, repetitionId, selectedPipeline, selectedProject, selectedSession],
+    [nextCaptureMetadata, selectedPipeline, selectedProject, selectedSession],
   );
 
-  const runScan = useCallback(async () => {
-    if (!device) return;
-    setError(null);
-    setState("busy");
-    try {
-      await device.setActiveConfiguration(configId);
-      const rawCapture = await device.startScan({ saveToDevice, sampleId }, setProgress);
-      await saveCompletedCapture(rawCapture);
-      if (repeatSample) {
-        setRepetitionId((current) => nextRepetitionId(current));
-      } else {
-        setSampleId((current) => nextSampleId(current));
-        setRepetitionId("1");
+  const runScan = useCallback(
+    async (mode: ScanMode) => {
+      if (!device) return;
+      const target =
+        mode === "repeat" && lastSessionCapture
+          ? { sampleId: lastSessionCapture.sampleId, repetition: nextRepetitionId(captureRepetition(lastSessionCapture) || "1") }
+          : { sampleId, repetition: "1" };
+      setError(null);
+      setScanMode(mode);
+      setState("busy");
+      try {
+        await device.setActiveConfiguration(configId);
+        const rawCapture = await device.startScan({ saveToDevice, sampleId: target.sampleId }, setProgress);
+        await saveCompletedCapture(rawCapture, target.repetition);
+        if (mode === "capture") setSampleId(nextSampleId(target.sampleId));
+        setView("scan");
+        revealScanResult();
+      } catch (err) {
+        setError(formatError(err));
+      } finally {
+        setProgress(null);
+        setScanMode(null);
+        setState("connected");
       }
-      setView("scan");
-      revealScanResult();
-    } catch (err) {
-      setError(formatError(err));
-    } finally {
-      setProgress(null);
-      setState("connected");
-    }
-  }, [configId, device, repeatSample, sampleId, saveToDevice, saveCompletedCapture]);
+    },
+    [configId, device, lastSessionCapture, sampleId, saveToDevice, saveCompletedCapture],
+  );
 
   const loadStored = useCallback(
     async (index: number) => {
@@ -523,7 +538,7 @@ export default function App() {
       setError(null);
       try {
         const rawCapture = await device.readStoredScan(index, setProgress);
-        await saveCompletedCapture(rawCapture);
+        await saveCompletedCapture(rawCapture, "1");
         setView("scan");
         revealScanResult();
       } catch (err) {
@@ -661,9 +676,9 @@ export default function App() {
                     onNewSession={createNewSession}
                   />
                   <Field label="Project name">
-                    <input value={selectedProject?.name ?? ""} onChange={(event) => void updateProject({ name: event.target.value })} />
+                    <input value={selectedProject?.name ?? ""} onChange={(event) => updateProject({ name: event.target.value })} />
                   </Field>
-                  <MetadataFields values={selectedProject?.metadata ?? {}} fields={projectMetadataFields} onChange={(key, value) => void updateProjectMetadata(key, value)} />
+                  <MetadataFields values={selectedProject?.metadata ?? {}} fields={projectMetadataFields} onChange={updateProjectMetadata} />
                 </Panel>
 
                 <Panel title="Sessions" icon={ClipboardList}>
@@ -673,9 +688,9 @@ export default function App() {
                   </button>
                   <SessionList sessions={projectSessions} selectedId={selectedSession?.id ?? null} onSelect={setSelectedSessionId} />
                   <Field label="Session name">
-                    <input value={selectedSession?.name ?? ""} onChange={(event) => void updateSession({ name: event.target.value })} />
+                    <input value={selectedSession?.name ?? ""} onChange={(event) => updateSession({ name: event.target.value })} />
                   </Field>
-                  <MetadataFields values={selectedSession?.metadata ?? {}} fields={sessionMetadataFields} onChange={(key, value) => void updateSessionMetadata(key, value)} />
+                  <MetadataFields values={selectedSession?.metadata ?? {}} fields={sessionMetadataFields} onChange={updateSessionMetadata} />
                 </Panel>
 
                 <Panel title="Models" icon={Sparkles}>
@@ -794,44 +809,17 @@ export default function App() {
                     onNewSession={createNewSession}
                   />
                   <div className="select-action sample-id-action">
-                    <Field label="Sample ID">
-                      <input
-                        value={sampleId}
-                        onChange={(event) => {
-                          setSampleId(event.target.value);
-                          if (!repeatSample) setRepetitionId("1");
-                        }}
-                      />
+                    <Field label="Next sample ID">
+                      <input value={sampleId} onChange={(event) => setSampleId(event.target.value)} />
                     </Field>
                     <button
                       className="icon-button context-add"
-                      title="Next sample ID"
-                      aria-label="Next sample ID"
-                      onClick={() => {
-                        setSampleId((current) => nextSampleId(current));
-                        setRepetitionId("1");
-                      }}
+                      title="Skip to next sample ID"
+                      aria-label="Skip to next sample ID"
+                      onClick={() => setSampleId((current) => nextSampleId(current))}
                     >
                       <Plus size={16} />
                     </button>
-                  </div>
-                  <label className="switch-line">
-                    <input type="checkbox" checked={repeatSample} onChange={(event) => setRepeatSample(event.target.checked)} />
-                    <span>Repeat sample</span>
-                  </label>
-                  {repeatSample && (
-                    <div className="select-action">
-                      <Field label="Repetition">
-                        <input inputMode="numeric" value={repetitionId} onChange={(event) => setRepetitionId(event.target.value)} />
-                      </Field>
-                      <button className="icon-button context-add" title="Next repetition" aria-label="Next repetition" onClick={() => setRepetitionId((current) => nextRepetitionId(current))}>
-                        <Plus size={16} />
-                      </button>
-                    </div>
-                  )}
-                  <div className="capture-sequence" aria-live="polite">
-                    <span>Next</span>
-                    <strong>{sampleId}{repeatSample ? `, rep ${repetitionId}` : ""}</strong>
                   </div>
                   <Field label="Configuration">
                     <select value={configId} onChange={(event) => setConfigId(event.target.value)} disabled={configs.length === 0}>
@@ -855,10 +843,30 @@ export default function App() {
                     <MetadataFields values={nextCaptureMetadata} fields={nextCaptureMetadataFields} onChange={(key, value) => setNextCaptureMetadata((prev) => ({ ...prev, [key]: value }))} />
                   </details>
                   <div className="capture-submit">
-                    <button className="primary-button scan-button" disabled={!connected || state === "busy" || !selectedSession} onClick={runScan}>
-                      {state === "busy" ? <Loader2 className="spin" size={18} /> : <Play size={18} />}
-                      Capture spectrum
-                    </button>
+                    <div className="capture-actions">
+                      <button
+                        className="primary-button scan-button"
+                        disabled={!connected || state === "busy" || !selectedSession}
+                        onClick={() => void runScan("capture")}
+                      >
+                        {scanMode === "capture" ? <Loader2 className="spin" size={18} /> : <Play size={18} />}
+                        <span className="action-label">
+                          <strong>Capture</strong>
+                          <small>{sampleId.trim() || "sample-001"}</small>
+                        </span>
+                      </button>
+                      <button
+                        className="ghost-button repeat-button"
+                        disabled={!connected || state === "busy" || !selectedSession || !lastSessionCapture}
+                        onClick={() => void runScan("repeat")}
+                      >
+                        {scanMode === "repeat" ? <Loader2 className="spin" size={18} /> : <Repeat size={18} />}
+                        <span className="action-label">
+                          <strong>Repeat</strong>
+                          <small>{lastSessionCapture ? `rep ${repeatRepetition} · ${lastSessionCapture.sampleId}` : "no capture yet"}</small>
+                        </span>
+                      </button>
+                    </div>
                   </div>
                   {progress && <ProgressBar progress={progress} />}
                 </Panel>
@@ -884,7 +892,22 @@ export default function App() {
                 </Panel>
                 <Panel title="Capture Metadata" icon={ClipboardList} wide>
                   {selectedCapture ? (
-                    <MetadataFields values={selectedCapture.metadata ?? {}} fields={captureMetadataFields} onChange={(key, value) => void updateSelectedCaptureMetadata(key, value)} />
+                    <>
+                      <div className="capture-identity">
+                        <Field label="Sample ID">
+                          <input value={selectedCapture.sampleId} onChange={(event) => updateSelectedCapture({ sampleId: event.target.value })} />
+                        </Field>
+                        <Field label="Repetition">
+                          <input
+                            inputMode="numeric"
+                            placeholder="1"
+                            value={captureRepetition(selectedCapture)}
+                            onChange={(event) => updateSelectedCaptureMetadata("repetition", event.target.value)}
+                          />
+                        </Field>
+                      </div>
+                      <MetadataFields values={selectedCapture.metadata ?? {}} fields={captureMetadataFields} onChange={updateSelectedCaptureMetadata} />
+                    </>
                   ) : (
                     <EmptyState text="No capture selected." />
                   )}
