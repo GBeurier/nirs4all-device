@@ -32,7 +32,6 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Capacitor } from "@capacitor/core";
-import { brand } from "nirs4all-ui";
 import { CapacitorBleTransport } from "@/device/capacitorBleTransport";
 import { DlpNirscanNanoDevice } from "@/device/nano/nanoDevice";
 import { SimulatedNirscanNanoDevice } from "@/device/simulatedDevice";
@@ -258,10 +257,6 @@ export default function App() {
   const inspectedOverlays = [inspectedProjectEnvelope, inspectedSessionEnvelope].filter(Boolean) as SpectrumEnvelope[];
   const lastSessionCapture = sessionCaptures[0] ?? null;
   const repeatRepetition = lastSessionCapture ? nextRepetitionId(captureRepetition(lastSessionCapture) || "1") : null;
-  const logo = useMemo(
-    () => brand.generateNirs4allBrandSvg("nirs4all", { variant: "icon", title: "nirs4all Device", animated: true }),
-    [],
-  );
 
   async function refreshStore() {
     let [storedCaptures, storedPipelines, storedProjects, storedSessions] = await Promise.all([
@@ -620,7 +615,9 @@ export default function App() {
     <div className="app-shell n4-app n4-app-bg">
       <div className="spectrum-strip n4-spectrum-strip" aria-hidden="true" />
       <header className="topbar">
-        <div className="brand-mark" dangerouslySetInnerHTML={{ __html: logo }} />
+        <div className="brand-mark">
+          <img src="brand/icon.svg" alt="nirs4all device" />
+        </div>
         <div className="brand-copy">
           <strong>nirs4all</strong>
           <span>device</span>
