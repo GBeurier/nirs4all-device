@@ -20,6 +20,8 @@ jobs:
           java-version: 21
           cache: gradle
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - name: Install
         run: npm ci
       - name: Install Android SDK packages
