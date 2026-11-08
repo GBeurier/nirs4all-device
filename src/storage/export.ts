@@ -194,3 +194,44 @@ function csvCell(value: string): string {
   if (!/[",\n]/.test(value)) return value;
   return `"${value.replaceAll('"', '""')}"`;
 }
+
+export interface BinaryExportFile {
+  filename: string;
+  mime: string;
+  /** Exact bytes; a subarray view is honoured (offset and length), never its whole backing buffer. */
+  bytes: Uint8Array;
+}
+
+// Multiple of 3 bytes so each chunk encodes without padding and the pieces concatenate to valid base64.
+const BASE64_CHUNK_BYTES = 3 * 8192;
+
+/** Base64 transport of the exact byte view. No text encoding, no size cap; bounded chunks only. */
+function bytesToBase64(bytes: Uint8Array): string {
+  let out = "";
+  for (let offset = 0; offset < bytes.length; offset += BASE64_CHUNK_BYTES) {
+    const chunk = bytes.subarray(offset, Math.min(offset + BASE64_CHUNK_BYTES, bytes.length));
+    out += btoa(String.fromCharCode.apply(null, chunk as unknown as number[]));
+  }
+  return out;
+}
+
+/** Binary counterpart of `exportTextFile`; the text helper above is unchanged. */
+export async function exportBinaryFile(file: BinaryExportFile): Promise<void> {
+  if (Capacitor.isNativePlatform()) {
+    // No `encoding`: Capacitor treats `data` as base64 and writes the decoded bytes.
+    const written = await Filesystem.writeFile({
+      path: file.filename,
+      data: bytesToBase64(file.bytes),
+      directory: Directory.Documents,
+    });
+    await Share.share({ title: file.filename, url: written.uri });
+    return;
+  }
+  const blob = new Blob([file.bytes as BlobPart], { type: file.mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = file.filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}

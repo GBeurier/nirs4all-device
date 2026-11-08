@@ -1,0 +1,25 @@
+{
+  "schema_version": "nirs4all.vendored-npm/v1",
+  "package": {
+    "name": "nirs4all-formats-wasm",
+    "version": "0.2.14+local.20261108.1"
+  },
+  "source": {
+    "kind": "existing-qualified-owner-package-export",
+    "workspace_origin": "nirs4all-quality/app/vendor/owners-current/wasm/formats",
+    "source_package_version": "0.2.14",
+    "wasm_members": {
+      "nirs4all_formats_wasm_bg.wasm": "17c1bb6e1a79b1fd08d376fe2a4410320c18501deb6355a4c8cede0e253f1722"
+    },
+    "note": "Existing owner package bytes with a local package-version override only. No native, Rust, C++ or WASM build. Device integration checks pending."
+  },
+  "artifact": {
+    "filename": "nirs4all-formats-wasm-0.2.14+local.20261108.1.tgz",
+    "sha256": "bd33c3edb649e634deb967219d1be427dc20033cc0d46516c9a0db560b1c5fb6",
+    "size": 1944215,
+    "npm_integrity": "sha512-OKvmoMgmbV/ov7q5HdNJ47+ONz5NW+74B/p9Dn8IH0+u3+Iex8ANa+j5JlSkk5KA9sLM2x3H+E4cd6h/tdluPQ=="
+  },
+  "publication": {
+    "status": "unpublished-local-development"
+  }
+}

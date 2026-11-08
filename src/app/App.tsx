@@ -58,7 +58,7 @@ import { LocalQualityEngine } from "@/runtime/quality";
 import { nextRepetitionId, nextSampleId } from "@/runtime/sampleIds";
 import { summarizeSpectrum } from "@/runtime/spectrumStats";
 import { CaptureStore } from "@/storage/captureStore";
-import { buildExport, exportTextFile, type ExportKind } from "@/storage/export";
+import { buildExport, exportBinaryFile, exportTextFile, type ExportKind } from "@/storage/export";
 
 type ViewId = "projects" | "connection" | "scan";
 type BatchScope = "project" | "session";
@@ -294,7 +294,8 @@ export default function App() {
       storedSessions.find((session) => session.projectId === projectId)?.id ??
       null;
     setCaptures(storedCaptures);
-    setPipelines(storedPipelines);
+    // Presentation copies only: the runtime classifies each stored row in memory; nothing is written back.
+    setPipelines(storedPipelines.map((item) => inferenceEngine.classifyStored(item)));
     setProjects(storedProjects);
     setSessions(storedSessions);
     setSelectedProjectId(projectId);
@@ -557,7 +558,8 @@ export default function App() {
     async (file: File) => {
       setError(null);
       try {
-        const artifact = { ...inferenceEngine.importArtifact(await file.text(), file.name), projectId: selectedProject?.id };
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const artifact = { ...(await inferenceEngine.importArtifact(bytes, file.name)), projectId: selectedProject?.id };
         await store.savePipeline(artifact);
         if (selectedProject) {
           const project = { ...selectedProject, activePipelineId: artifact.id };
@@ -626,6 +628,17 @@ export default function App() {
     },
     [projectCaptures, projectPipelines, projectSessions, selectedCapture, selectedProject],
   );
+
+  const exportModel = useCallback(async () => {
+    if (!selectedPipeline?.runnable) return;
+    setError(null);
+    try {
+      const bytes = await inferenceEngine.exportArtifact(selectedPipeline);
+      await exportBinaryFile({ filename: modelExportFilename(selectedPipeline), mime: "application/octet-stream", bytes });
+    } catch (err) {
+      setError(formatError(err));
+    }
+  }, [selectedPipeline]);
 
   return (
     <div className="app-shell n4-app n4-app-bg">
@@ -712,6 +725,10 @@ export default function App() {
                     <FlaskConical size={17} />
                     Fit demo from captures
                   </button>
+                  <button className="ghost-button full" onClick={() => void exportModel()} disabled={!selectedPipeline?.runnable}>
+                    <Download size={17} />
+                    Export .n4a model
+                  </button>
                   <PipelineList pipelines={projectPipelines} selectedId={selectedPipeline?.id ?? null} onSelect={(id) => void selectPipeline(id)} />
                 </Panel>
               </div>
@@ -752,7 +769,7 @@ export default function App() {
                     </button>
                     <button className="ghost-button" onClick={() => void exportProject("json")} disabled={!selectedProject}>
                       <FileJson size={17} />
-                      Project JSON
+                      Dataset JSON
                     </button>
                   </div>
                 </Panel>
@@ -1284,7 +1301,7 @@ function PipelineContext({ artifact }: { artifact: PipelineArtifact | null }) {
   return (
     <div className={artifact.runnable ? "pipeline-context ready" : "pipeline-context definition"}>
       <strong>{artifact.name}</strong>
-      <span>{artifact.runnable ? `${artifact.nFeatures} features` : "pipeline definition only"}</span>
+      <span>{artifact.runnable ? `${artifact.nFeatures} features` : "not runnable"}</span>
       {artifact.validationMessage && <small>{artifact.validationMessage}</small>}
     </div>
   );
@@ -1321,9 +1338,11 @@ function QualityBadge({ report }: { report: QualityReport }) {
 
 function RuntimeStack({ nativeShell, webBluetoothAvailable }: { nativeShell: boolean; webBluetoothAvailable: boolean }) {
   const manifest = inferenceEngine.capabilities();
+  const profiles = manifest.executionProfiles.profiles;
   return (
     <div className="runtime-stack">
-      <div><strong>{manifest.aggregate}</strong><span>{manifest.controllers.length} controllers</span></div>
+      <div><strong>{manifest.aggregate}</strong><span>{profiles.length} declared execution profiles</span></div>
+      <div><strong>Profiles</strong><span>{profiles.map((profile) => profile.id).join(", ") || "none declared"}</span></div>
       <div><strong>nirs4all-ui</strong><span>brand + contracts</span></div>
       <div><strong>Capacitor</strong><span>{nativeShell ? "native shell" : "web shell"}</span></div>
       <div><strong>BLE</strong><span>{nativeShell ? "native plugin" : webBluetoothAvailable ? "Web Bluetooth" : "not available"}</span></div>
@@ -1544,7 +1563,8 @@ function PipelineList({ pipelines, selectedId, onSelect }: { pipelines: Pipeline
       {pipelines.map((pipeline) => (
         <button key={pipeline.id} className={pipeline.id === selectedId ? "list-item active" : "list-item"} onClick={() => onSelect(pipeline.id)}>
           <strong>{pipeline.name}</strong>
-          <span>{pipeline.runnable ? `${pipeline.nFeatures} features` : "definition only"}</span>
+          <span>{pipeline.runnable ? `${pipeline.nFeatures} features` : "not runnable"}</span>
+          {!pipeline.runnable && pipeline.validationMessage && <small>{pipeline.validationMessage}</small>}
         </button>
       ))}
     </div>
@@ -1615,7 +1635,7 @@ function FileImportButton({ label, onFile }: { label: string; onFile: (file: Fil
       <span>{label}</span>
       <input
         type="file"
-        accept=".json,.n4a,application/json"
+        accept=".n4a"
         onChange={(event) => {
           const file = event.target.files?.[0];
           if (file) void onFile(file);
@@ -1792,6 +1812,13 @@ function formatMetadataKey(key: string): string {
 
 function captureRepetition(capture: SpectrumCapture): string {
   return capture.metadata?.repetition?.trim() ?? "";
+}
+
+/** Safe constant-prefix file name; the model bytes are never rewritten. */
+function modelExportFilename(artifact: PipelineArtifact): string {
+  const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
+  const id = artifact.id.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 48);
+  return `nirs4all-device-model-${id}-${stamp}.n4a`;
 }
 
 function formatCaptureLabel(capture: SpectrumCapture): string {

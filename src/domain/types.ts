@@ -131,10 +131,22 @@ export interface PipelineArtifact {
   engine: string;
   nFeatures: number;
   runnable: boolean;
-  kind: "portable_result" | "pipeline_definition";
+  kind: "device_n4a_container" | "legacy_json" | "portable_result" | "pipeline_definition";
   validationMessage?: string;
   targetName?: string;
   raw: unknown;
+}
+
+/** Exact Core V1 archive bytes; historical raw JSON remains opaque. */
+export interface DeviceContainerRaw {
+  archiveBytes: Uint8Array;
+  sha256: string;
+  filename?: string;
+}
+
+export interface DevicePipelineArtifact extends PipelineArtifact {
+  kind: "device_n4a_container";
+  raw: DeviceContainerRaw;
 }
 
 export interface PredictionResult {

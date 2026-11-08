@@ -1,0 +1,25 @@
+{
+  "schema_version": "nirs4all.vendored-npm/v1",
+  "package": {
+    "name": "dag-ml-data-wasm",
+    "version": "0.2.16+local.20261108.1"
+  },
+  "source": {
+    "kind": "existing-qualified-owner-package-export",
+    "workspace_origin": "nirs4all-quality/app/vendor/owners-current/wasm/dagml-data",
+    "source_package_version": "0.2.16",
+    "wasm_members": {
+      "dag_ml_data_wasm_bg.wasm": "7e135079d4e27b0290eb88313122a9d79faa98c178f70caf0575949721d47965"
+    },
+    "note": "Existing owner package bytes with a local package-version override only. No native, Rust, C++ or WASM build. Device integration checks pending."
+  },
+  "artifact": {
+    "filename": "dag-ml-data-wasm-0.2.16+local.20261108.1.tgz",
+    "sha256": "a4a5e019f11e8690e0715c5d08fabccdeb9d8d3dab92097d3a7985db492a8850",
+    "size": 576093,
+    "npm_integrity": "sha512-nS4mFPWQnUZMu/T+SI4lDf+Qfr4NtIxpIAQBERVcROY+wZrA33lmf5sb9uQ+yPJ2MwFjZ53H6Saw9qavd9/pXg=="
+  },
+  "publication": {
+    "status": "unpublished-local-development"
+  }
+}

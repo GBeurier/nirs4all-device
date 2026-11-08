@@ -1,0 +1,25 @@
+{
+  "schema_version": "nirs4all.vendored-npm/v1",
+  "package": {
+    "name": "@nirs4all/datasets-wasm",
+    "version": "0.3.18+local.20261108.1"
+  },
+  "source": {
+    "kind": "existing-qualified-owner-package-export",
+    "workspace_origin": "nirs4all-quality/app/vendor/owners-current/wasm/datasets",
+    "source_package_version": "0.3.18",
+    "wasm_members": {
+      "nirs4all_datasets_wasm_bg.wasm": "d7bbaa6ae836092a68d205d8966154866a0754be08fd2b85df9fbcd136e92368"
+    },
+    "note": "Existing owner package bytes with a local package-version override only. No native, Rust, C++ or WASM build. Device integration checks pending."
+  },
+  "artifact": {
+    "filename": "nirs4all-datasets-wasm-0.3.18+local.20261108.1.tgz",
+    "sha256": "5ddcd2933c4c08c4e1e9563c75b2aaabc75f897a7253ce611868d52e33b046fb",
+    "size": 112053,
+    "npm_integrity": "sha512-ByfIkvmCdEZOxlQmHvmZeLJXYm/n8W39pIhary8SVw3Hra7zXatVdFWIBrBl39lkZ4Zg9acZSD/y87sj/3NGMQ=="
+  },
+  "publication": {
+    "status": "unpublished-local-development"
+  }
+}

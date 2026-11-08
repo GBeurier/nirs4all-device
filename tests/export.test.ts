@@ -1,14 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { makeSimulatedCapture } from "@/device/simulatedDevice";
-import { buildExport, exportTextFile } from "@/storage/export";
+import { buildExport, exportBinaryFile, exportTextFile } from "@/storage/export";
 import type { Spectrum, SpectrumCapture } from "@/domain/types";
 
-const writes = vi.hoisted(() => ({ file: vi.fn(), share: vi.fn() }));
-vi.mock("@capacitor/core", () => ({ Capacitor: { isNativePlatform: () => true } }));
+const writes = vi.hoisted(() => ({ file: vi.fn(), share: vi.fn(), native: true }));
+vi.mock("@capacitor/core", () => ({ Capacitor: { isNativePlatform: () => writes.native } }));
 vi.mock("@capacitor/filesystem", () => ({ Filesystem: { writeFile: writes.file }, Directory: { Documents: "documents" }, Encoding: { UTF8: "utf8" } }));
 vi.mock("@capacitor/share", () => ({ Share: { share: writes.share } }));
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  writes.native = true;
+});
 function capture(id: string, spectrum?: Spectrum): SpectrumCapture {
   return { id, sampleId: "same sample", createdAt: "2026-11-08T00:00:00Z", source: "simulated", tags: [], spectrum,
     device: { id: "sim", name: "Simulator", model: "sim", transport: "simulator" } };
@@ -119,5 +122,85 @@ describe("exports", () => {
     expect(file.text).toContain(",s1,2,s1,");
     expect(file.text).toContain("operator,Ada");
     expect(file.text).toContain("observation,leaf ok");
+  });
+});
+
+describe("binary model export", () => {
+  it("writes the exact byte view as base64 on native, without UTF-8 encoding, and shares the file URI", async () => {
+    // A subarray with a non-zero offset: only bytes 0, 128, 255, 1 may be written.
+    const backing = Uint8Array.of(7, 7, 0, 128, 255, 1, 7, 7);
+    const bytes = backing.subarray(2, 6);
+    expect(bytes.byteOffset).toBe(2);
+    writes.file.mockResolvedValue({ uri: "file:///documents/model.n4a" });
+    await exportBinaryFile({ filename: "model.n4a", mime: "application/octet-stream", bytes });
+    expect(writes.file).toHaveBeenCalledOnce();
+    const call = writes.file.mock.calls[0][0] as { path: string; data: string; directory: string };
+    expect(call).not.toHaveProperty("encoding");
+    expect(call.path).toBe("model.n4a");
+    expect(call.directory).toBe("documents");
+    expect(call.data).toBe("AID/AQ==");
+    expect([...Buffer.from(call.data, "base64")]).toEqual([0, 128, 255, 1]);
+    expect(writes.share).toHaveBeenCalledExactlyOnceWith({ title: "model.n4a", url: "file:///documents/model.n4a" });
+    expect(writes.share.mock.calls[0][0]).not.toHaveProperty("text");
+  });
+
+  it("encodes arbitrary lengths across chunk boundaries without altering a byte", async () => {
+    writes.file.mockResolvedValue({ uri: "file:///documents/big.n4a" });
+    for (const length of [0, 1, 2, 3, 24576, 24577, 2 * 24576 + 5]) {
+      writes.file.mockClear();
+      const bytes = Uint8Array.from({ length }, (_, i) => (i * 37 + (i >> 8)) % 256);
+      await exportBinaryFile({ filename: "big.n4a", mime: "application/octet-stream", bytes });
+      const data = (writes.file.mock.calls[0][0] as { data: string }).data;
+      expect(new Uint8Array(Buffer.from(data, "base64"))).toEqual(bytes);
+    }
+  });
+
+  it("downloads the exact byte view as a Blob in the browser", async () => {
+    writes.native = false;
+    const bytes = Uint8Array.of(9, 9, 0, 128, 255, 1, 9).subarray(2, 6);
+    let blob: Blob | undefined;
+    const create = vi.fn((value: Blob) => { blob = value; return "blob:model"; });
+    const revoke = vi.fn();
+    // jsdom has no object-URL support; install and then restore the two members only.
+    const original = { create: URL.createObjectURL, revoke: URL.revokeObjectURL };
+    URL.createObjectURL = create as unknown as typeof URL.createObjectURL;
+    URL.revokeObjectURL = revoke;
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    try {
+      await exportBinaryFile({ filename: "model.n4a", mime: "application/octet-stream", bytes });
+      expect(click).toHaveBeenCalledOnce();
+      expect(revoke).toHaveBeenCalledWith("blob:model");
+      expect(blob!.type).toBe("application/octet-stream");
+      const read = await new Promise<Uint8Array>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(new Uint8Array(reader.result as ArrayBuffer));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsArrayBuffer(blob!);
+      });
+      expect([...read]).toEqual([0, 128, 255, 1]);
+      expect(writes.file).not.toHaveBeenCalled();
+    } finally {
+      click.mockRestore();
+      URL.createObjectURL = original.create;
+      URL.revokeObjectURL = original.revoke;
+    }
+  });
+
+  it("keeps the text export on UTF-8 and leaves model bytes out of the dataset JSON", async () => {
+    await exportTextFile({ filename: "a.csv", mime: "text/csv", text: "x" });
+    expect(writes.file).toHaveBeenCalledExactlyOnceWith({ path: "a.csv", data: "x", directory: "documents", encoding: "utf8" });
+    expect(writes.share).toHaveBeenCalledExactlyOnceWith({ title: "a.csv", text: "a.csv" });
+    const pipeline = {
+      id: "p1", projectId: "project-1", name: "Demo", importedAt: "2026-11-08T00:00:00.000Z", engine: "owner", nFeatures: 3,
+      runnable: true, kind: "portable_result" as const, validationMessage: "ok", targetName: "demo_target",
+      raw: { archiveBytes: Uint8Array.of(1, 2, 3), sha256: "00" },
+    };
+    const file = await buildExport([], "json", { pipelines: [pipeline] });
+    const parsed = JSON.parse(file.text) as { pipelines: Record<string, unknown>[] };
+    expect(Object.keys(parsed.pipelines[0]).sort()).toEqual(
+      ["engine", "id", "importedAt", "kind", "nFeatures", "name", "projectId", "runnable", "targetName", "validationMessage"],
+    );
+    expect(file.text).not.toContain("archiveBytes");
+    expect(file.text).not.toContain("raw");
   });
 });
