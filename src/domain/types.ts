@@ -60,6 +60,23 @@ export interface Spectrum {
   signalType: "intensity" | "reflectance" | "absorbance" | "unknown";
 }
 
+export interface SpectrumDescriptor {
+  axis: number[];
+  axisUnit: "nm" | "cm-1";
+  signalType: "intensity" | "reflectance" | "absorbance";
+}
+
+export interface SpectrumEnvelopeDiagnostics {
+  status: "ready" | "unavailable";
+  totalCount: number;
+  includedCaptureIds: string[];
+  excluded: Array<{ captureId: string; reason: string }>;
+  refused: Array<{ captureId: string; reason: string }>;
+  // null means the owner reduction was unavailable, never a fabricated zero count.
+  finiteCounts: number[] | null;
+  unavailableReason?: string;
+}
+
 export interface SpectrumEnvelope {
   label: string;
   axis: number[];
@@ -67,6 +84,7 @@ export interface SpectrumEnvelope {
   median: number[];
   upper: number[];
   count?: number;
+  diagnostics?: SpectrumEnvelopeDiagnostics;
 }
 
 export interface SpectrumCapture {

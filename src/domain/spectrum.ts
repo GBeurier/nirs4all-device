@@ -1,4 +1,5 @@
-import type { Spectrum, SpectrumCapture, SpectrumEnvelope } from "./types";
+import type { Spectrum, SpectrumCapture, SpectrumDescriptor, SpectrumEnvelope, SpectrumEnvelopeDiagnostics } from "./types";
+import { alignSpectrum, finiteColumnQuantiles, requireSpectrumDescriptor } from "@/runtime/spectrumAlignment";
 
 export function makeCaptureId(prefix = "cap"): string {
   const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
@@ -19,14 +20,6 @@ export function decodeBytesBase64(value: string): Uint8Array {
   return out;
 }
 
-export function interpolateSpectrum(source: Spectrum, targetAxis: number[]): Spectrum {
-  if (source.axis.length === targetAxis.length && source.axis.every((v, i) => v === targetAxis[i])) {
-    return source;
-  }
-  const values = targetAxis.map((x) => interpolatePoint(source.axis, source.values, x));
-  return { ...source, axis: targetAxis, values };
-}
-
 export function spectrumToCsv(capture: SpectrumCapture): string {
   const rows = [["sample_id", "capture_id", "created_at", "axis", "value", "axis_unit", "signal_type"]];
   if (!capture.spectrum) return rows.map((row) => row.join(",")).join("\n");
@@ -44,70 +37,92 @@ export function spectrumToCsv(capture: SpectrumCapture): string {
   return rows.map((row) => row.join(",")).join("\n");
 }
 
-export function capturesToMatrixCsv(captures: SpectrumCapture[]): string {
-  const spectra = captures.filter((capture) => capture.spectrum) as Array<SpectrumCapture & { spectrum: Spectrum }>;
-  if (spectra.length === 0) return "sample_id\n";
-  const axis = spectra[0].spectrum.axis;
-  const header = ["sample_id", ...axis.map((x) => `x_${formatAxis(x)}`)];
-  const rows = [header];
-  for (const capture of spectra) {
-    const spectrum = interpolateSpectrum(capture.spectrum, axis);
-    rows.push([csvCell(capture.sampleId), ...spectrum.values.map((value) => String(value))]);
+/** The first decoded capture defines the full reference descriptor. No rows are silently omitted. */
+export async function capturesToMatrixCsv(captures: SpectrumCapture[]): Promise<string> {
+  const identityHeader = ["capture_id", "sample_id", "repetition", "axis_unit", "signal_type"];
+  if (captures.length === 0) return `${identityHeader.join(",")}\n`;
+  const referenceCapture = captures.find((capture) => capture.spectrum);
+  if (!referenceCapture?.spectrum) throw new Error("Matrix CSV unavailable: no decoded captures.");
+  const raw = captures.filter((capture) => !capture.spectrum);
+  if (raw.length > 0) throw new Error(`Matrix CSV unavailable: decoded spectrum missing for ${raw.map((capture) => capture.id).join(", ")}.`);
+  const reference = requireSpectrumDescriptor(referenceCapture.spectrum);
+  // Complete every alignment before constructing or handing off any file.
+  const aligned = await Promise.all(captures.map(async (capture) => {
+    try {
+      return await alignSpectrum(capture.spectrum!, reference);
+    } catch (error) {
+      throw new Error(`Matrix CSV refused capture ${capture.id}: ${errorMessage(error)}`);
+    }
+  }));
+  const rows = [[...identityHeader, ...reference.axis.map((value) => `x_${String(value)}`)]];
+  for (let i = 0; i < captures.length; i += 1) {
+    const capture = captures[i];
+    rows.push([
+      capture.id, capture.sampleId, capture.metadata?.repetition ?? "", reference.axisUnit, reference.signalType,
+      ...aligned[i].values.map(String),
+    ]);
   }
-  return rows.map((row) => row.join(",")).join("\n");
+  return rows.map((row) => row.map(matrixCsvCell).join(",")).join("\n");
 }
 
-export function buildSpectrumEnvelope(
+/** Align companions to the selected descriptor, with one accounting entry per input capture. */
+export async function buildSpectrumEnvelope(
   captures: SpectrumCapture[],
-  targetAxis: number[],
+  reference: SpectrumDescriptor | Spectrum | undefined,
   label: string,
-  lowerQ = 0.1,
-  upperQ = 0.9,
-): SpectrumEnvelope | null {
-  const spectra = captures.filter((capture) => capture.spectrum) as Array<SpectrumCapture & { spectrum: Spectrum }>;
-  if (spectra.length < 1 || targetAxis.length === 0) return null;
-  const aligned = spectra.map((capture) => interpolateSpectrum(capture.spectrum, targetAxis).values);
-  const lower: number[] = [];
-  const median: number[] = [];
-  const upper: number[] = [];
-  for (let col = 0; col < targetAxis.length; col += 1) {
-    const values = aligned.map((row) => row[col]).filter(Number.isFinite).sort((a, b) => a - b);
-    if (values.length === 0) {
-      lower.push(Number.NaN);
-      median.push(Number.NaN);
-      upper.push(Number.NaN);
-    } else {
-      lower.push(quantile(values, lowerQ));
-      median.push(quantile(values, 0.5));
-      upper.push(quantile(values, upperQ));
+  excludeCaptureId?: string,
+): Promise<SpectrumEnvelope> {
+  const diagnostics: SpectrumEnvelopeDiagnostics = {
+    status: "unavailable", totalCount: captures.length, includedCaptureIds: [], excluded: [], refused: [], finiteCounts: null,
+  };
+  const candidates = captures.filter((capture) => {
+    if (capture.id === excludeCaptureId || !capture.spectrum) {
+      diagnostics.excluded.push({ captureId: capture.id, reason: capture.id === excludeCaptureId ? "Selected capture excluded by capture ID." : "Decoded spectrum unavailable." });
+      return false;
+    }
+    return true;
+  });
+  let target: SpectrumDescriptor;
+  try {
+    target = requireSpectrumDescriptor(reference);
+  } catch (error) {
+    const reason = `Reference descriptor unavailable: ${errorMessage(error)}`;
+    diagnostics.refused = candidates.map((capture) => ({ captureId: capture.id, reason }));
+    return unavailableEnvelope(label, [], diagnostics, reason);
+  }
+  const rows: number[][] = [];
+  for (const capture of candidates) {
+    try {
+      rows.push((await alignSpectrum(capture.spectrum!, target)).values);
+      diagnostics.includedCaptureIds.push(capture.id);
+    } catch (error) {
+      diagnostics.refused.push({ captureId: capture.id, reason: errorMessage(error) });
     }
   }
-  return { label, axis: targetAxis, lower, median, upper, count: spectra.length };
+  if (rows.length === 0) return unavailableEnvelope(label, target.axis, diagnostics, "No compatible decoded companion captures.");
+  try {
+    const { lower, median, upper, finiteCounts } = await finiteColumnQuantiles(rows, target.axis.length);
+    diagnostics.status = "ready";
+    diagnostics.finiteCounts = finiteCounts;
+    return { label, axis: [...target.axis], lower, median, upper, count: rows.length, diagnostics };
+  } catch (error) {
+    return unavailableEnvelope(label, target.axis, diagnostics, `Methods quantiles unavailable: ${errorMessage(error)}`);
+  }
 }
 
-function interpolatePoint(axis: number[], values: number[], x: number): number {
-  if (axis.length === 0) return Number.NaN;
-  if (x <= axis[0]) return values[0];
-  if (x >= axis[axis.length - 1]) return values[values.length - 1];
-  let hi = 1;
-  while (hi < axis.length && axis[hi] < x) hi += 1;
-  const lo = hi - 1;
-  const span = axis[hi] - axis[lo];
-  const t = span === 0 ? 0 : (x - axis[lo]) / span;
-  return values[lo] + (values[hi] - values[lo]) * t;
+function unavailableEnvelope(label: string, axis: number[], diagnostics: SpectrumEnvelopeDiagnostics, reason: string): SpectrumEnvelope {
+  diagnostics.unavailableReason = reason;
+  const missing = () => axis.map(() => Number.NaN);
+  return { label, axis: [...axis], lower: missing(), median: missing(), upper: missing(), count: 0, diagnostics };
 }
 
-function quantile(sorted: number[], q: number): number {
-  if (sorted.length === 1) return sorted[0];
-  const pos = (sorted.length - 1) * q;
-  const lo = Math.floor(pos);
-  const hi = Math.ceil(pos);
-  const t = pos - lo;
-  return sorted[lo] + (sorted[hi] - sorted[lo]) * t;
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
-function formatAxis(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+function matrixCsvCell(value: string): string {
+  if (!/[",\r\n]/.test(value)) return value;
+  return `"${value.replaceAll('"', '""')}"`;
 }
 
 function csvCell(value: string): string {

@@ -30,7 +30,7 @@ import {
   XCircle,
   type LucideIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Capacitor } from "@capacitor/core";
 import { CapacitorBleTransport } from "@/device/capacitorBleTransport";
 import { DlpNirscanNanoDevice } from "@/device/nano/nanoDevice";
@@ -50,9 +50,10 @@ import type {
   SpectrumEnvelope,
   TransportKind,
 } from "@/domain/types";
-import { buildSpectrumEnvelope } from "@/domain/spectrum";
+import { useSpectrumEnvelope } from "@/app/useSpectrumEnvelope";
+import { SpectrumPlotView, SpectrumPointTable } from "@/app/SpectrumPlotView";
 import { summarizeDatasetQuality, type DatasetQualitySummary } from "@/runtime/datasetQuality";
-import { PortableNirs4allInferenceEngine } from "@/runtime/inference";
+import { PortableNirs4allInferenceEngine, type InferenceEngine } from "@/runtime/inference";
 import { LocalQualityEngine } from "@/runtime/quality";
 import { nextRepetitionId, nextSampleId } from "@/runtime/sampleIds";
 import { summarizeSpectrum } from "@/runtime/spectrumStats";
@@ -211,10 +212,13 @@ export default function App() {
   );
 
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? projects[0] ?? null;
-  const projectSessions = sessions.filter((session) => session.projectId === selectedProject?.id);
+  const projectSessions = useMemo(() => sessions.filter((session) => session.projectId === selectedProject?.id), [sessions, selectedProject?.id]);
   const selectedSession = projectSessions.find((session) => session.id === selectedSessionId) ?? projectSessions[0] ?? null;
-  const projectCaptures = captures.filter((capture) => !selectedProject || capture.projectId === selectedProject.id || !capture.projectId);
-  const sessionCaptures = projectCaptures.filter((capture) => capture.sessionId === selectedSession?.id);
+  const projectCaptures = useMemo(
+    () => captures.filter((capture) => !selectedProject || capture.projectId === selectedProject.id || !capture.projectId),
+    [captures, selectedProject?.id],
+  );
+  const sessionCaptures = useMemo(() => projectCaptures.filter((capture) => capture.sessionId === selectedSession?.id), [projectCaptures, selectedSession?.id]);
   const selectedCapture = projectCaptures.find((capture) => capture.id === selectedCaptureId) ?? projectCaptures[0] ?? null;
   const projectPipelines = pipelines.filter((pipeline) => !selectedProject || !pipeline.projectId || pipeline.projectId === selectedProject.id);
   const selectedPipeline =
@@ -235,26 +239,33 @@ export default function App() {
   );
   const overviewCaptures = overviewScope === "session" ? sessionCaptures : projectCaptures;
   const overviewQuality = overviewScope === "session" ? sessionQuality : datasetQuality;
-  const projectEnvelope = useMemo(
-    () => buildOverlay(projectCaptures.filter((capture) => capture.id !== selectedCapture?.id), selectedCapture, "Project"),
-    [projectCaptures, selectedCapture],
-  );
-  const sessionEnvelope = useMemo(
-    () => buildOverlay(sessionCaptures.filter((capture) => capture.id !== selectedCapture?.id), selectedCapture, "Session"),
-    [sessionCaptures, selectedCapture],
-  );
+  const projectEnvelope = useSpectrumEnvelope(projectCaptures, selectedCapture, "Project");
+  const sessionEnvelope = useSpectrumEnvelope(sessionCaptures, selectedCapture, "Session");
   const spectrumOverlays = [projectEnvelope, sessionEnvelope].filter(Boolean) as SpectrumEnvelope[];
   const inspectedCapture = inspectedCaptureId ? projectCaptures.find((capture) => capture.id === inspectedCaptureId) ?? null : null;
-  const inspectedSessionCaptures = projectCaptures.filter((capture) => capture.sessionId === inspectedCapture?.sessionId);
-  const inspectedProjectEnvelope = useMemo(
-    () => buildOverlay(projectCaptures.filter((capture) => capture.id !== inspectedCapture?.id), inspectedCapture, "Project"),
-    [projectCaptures, inspectedCapture],
+  const inspectedSessionCaptures = useMemo(
+    () => projectCaptures.filter((capture) => capture.sessionId === inspectedCapture?.sessionId),
+    [projectCaptures, inspectedCapture?.sessionId],
   );
-  const inspectedSessionEnvelope = useMemo(
-    () => buildOverlay(inspectedSessionCaptures.filter((capture) => capture.id !== inspectedCapture?.id), inspectedCapture, "Session"),
-    [inspectedCapture, inspectedSessionCaptures],
-  );
+  const inspectedProjectEnvelope = useSpectrumEnvelope(projectCaptures, inspectedCapture, "Project");
+  const inspectedSessionEnvelope = useSpectrumEnvelope(inspectedSessionCaptures, inspectedCapture, "Session");
   const inspectedOverlays = [inspectedProjectEnvelope, inspectedSessionEnvelope].filter(Boolean) as SpectrumEnvelope[];
+  useEffect(() => {
+    const messages = [projectEnvelope, sessionEnvelope, inspectedProjectEnvelope, inspectedSessionEnvelope].flatMap((envelope) => {
+      const report = envelope?.diagnostics;
+      if (!envelope || !report) return [];
+      const reasons = report.refused.map((item) => `${item.captureId}: ${item.reason}`);
+      const unavailable = report.unavailableReason && report.totalCount > report.excluded.length ? [report.unavailableReason] : [];
+      return [...reasons, ...unavailable].map((reason) => `${envelope.label} envelope: ${reason}`);
+    });
+    if (messages.length > 0) setError([...new Set(messages)].join("\n"));
+  }, [projectEnvelope, sessionEnvelope, inspectedProjectEnvelope, inspectedSessionEnvelope]);
+  const predictionContext = useRef({ capture: selectedCapture, pipeline: selectedPipeline, generation: 0 });
+  if (predictionContext.current.capture !== selectedCapture || predictionContext.current.pipeline !== selectedPipeline) {
+    predictionContext.current = { capture: selectedCapture, pipeline: selectedPipeline, generation: predictionContext.current.generation + 1 };
+  }
+  const predictionRequest = useRef(0);
+  useEffect(() => () => { predictionRequest.current += 1; }, []);
   const lastSessionCapture = sessionCaptures[0] ?? null;
   const repeatRepetition = lastSessionCapture ? nextRepetitionId(captureRepetition(lastSessionCapture) || "1") : null;
 
@@ -470,7 +481,7 @@ export default function App() {
   const saveCompletedCapture = useCallback(
     async (rawCapture: SpectrumCapture, repetition: string): Promise<SpectrumCapture> => {
       const quality = await qualityEngine.evaluate(rawCapture);
-      let capture: SpectrumCapture = {
+      const completedCapture: SpectrumCapture = {
         ...rawCapture,
         projectId: selectedProject?.id,
         sessionId: selectedSession?.id,
@@ -482,14 +493,10 @@ export default function App() {
         }),
         quality,
       };
-      if (selectedPipeline?.runnable) {
-        try {
-          capture = { ...capture, prediction: await inferenceEngine.predict(capture, selectedPipeline) };
-        } catch (err) {
-          setError(`Capture saved; prediction skipped: ${formatError(err)}`);
-        }
-      }
-      await store.saveCapture(capture);
+      const { capture, predictionError } = await saveCaptureWithPrediction(
+        completedCapture, selectedPipeline, (input, artifact) => inferenceEngine.predict(input, artifact), (input) => store.saveCapture(input),
+      );
+      if (predictionError) setError(`Capture saved; prediction skipped: ${predictionError}`);
       setCaptures((prev) => [capture, ...prev.filter((item) => item.id !== capture.id)]);
       setSelectedCaptureId(capture.id);
       setNextCaptureMetadata((prev) => ({ ...prev, observation: "", sample_label: "", lot: "" }));
@@ -585,15 +592,18 @@ export default function App() {
 
   const predict = useCallback(async () => {
     if (!selectedCapture || !selectedPipeline) return;
+    const request = ++predictionRequest.current;
+    const generation = predictionContext.current.generation;
+    const current = () => request === predictionRequest.current && generation === predictionContext.current.generation;
     setError(null);
     try {
       const prediction = await inferenceEngine.predict(selectedCapture, selectedPipeline);
+      if (!current()) return;
       const capture = { ...selectedCapture, prediction };
       await store.saveCapture(capture);
-      setCaptures((prev) => prev.map((item) => (item.id === capture.id ? capture : item)));
-      setSelectedCaptureId(capture.id);
+      if (current()) setCaptures((prev) => prev.map((item) => (item.id === capture.id ? capture : item)));
     } catch (err) {
-      setError(formatError(err));
+      if (current()) setError(formatError(err));
     }
   }, [selectedCapture, selectedPipeline]);
 
@@ -606,7 +616,13 @@ export default function App() {
   const exportProject = useCallback(
     async (kind: ExportKind) => {
       const target = kind === "single-csv" && selectedCapture ? [selectedCapture] : projectCaptures;
-      await exportTextFile(buildExport(target, kind, { project: selectedProject, sessions: projectSessions, pipelines: projectPipelines }));
+      setError(null);
+      try {
+        const file = await buildExport(target, kind, { project: selectedProject, sessions: projectSessions, pipelines: projectPipelines });
+        await exportTextFile(file);
+      } catch (err) {
+        setError(formatError(err));
+      }
     },
     [projectCaptures, projectPipelines, projectSessions, selectedCapture, selectedProject],
   );
@@ -1151,9 +1167,7 @@ function BatchOverview({
     captures.find((capture) => capture.spectrum) ??
     captures[0] ??
     null;
-  const overlay = target?.spectrum
-    ? buildSpectrumEnvelope(captures.filter((capture) => capture.id !== target.id), target.spectrum.axis, scope === "session" ? "Session" : "Project")
-    : null;
+  const overlay = useSpectrumEnvelope(captures, target, scope === "session" ? "Session" : "Project");
   const overlays = overlay ? [overlay] : [];
   return (
     <div className="batch-overview">
@@ -1370,54 +1384,13 @@ function SpectrumView({
   overlays?: SpectrumEnvelope[];
   onInspect?: () => void;
 }) {
-  if (!capture?.spectrum) {
-    return <EmptyState text={capture?.rawPayloadBase64 ? "Raw Nano payload captured." : "No decoded spectrum selected."} />;
-  }
-  const { axis, values } = capture.spectrum;
-  const repetition = captureRepetition(capture);
-  const overlayValues = overlays.flatMap((overlay) => [...overlay.lower, ...overlay.median, ...overlay.upper]).filter(Number.isFinite);
-  const minY = Math.min(...values, ...overlayValues);
-  const maxY = Math.max(...values, ...overlayValues);
-  const point = (value: number, i: number) => {
-    const x = (i / Math.max(1, values.length - 1)) * 100;
-    const y = 100 - ((value - minY) / Math.max(1e-12, maxY - minY)) * 84 - 8;
-    return `${x.toFixed(3)},${y.toFixed(3)}`;
-  };
-  const points = values.map(point).join(" ");
   return (
-    <div className="spectrum-view">
-      <div className="spectrum-plot">
-        <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Spectrum">
-          {overlays.map((overlay) => {
-            const cls = overlay.label.toLowerCase();
-            const upper = overlay.upper.map(point);
-            const lower = overlay.lower.map(point).reverse();
-            const median = overlay.median.map(point).join(" ");
-            return (
-              <g key={overlay.label} className={`quantile-overlay ${cls}`}>
-                <polygon points={[...upper, ...lower].join(" ")} />
-                <polyline points={median} />
-              </g>
-            );
-          })}
-          <polyline points={points} />
-        </svg>
-        {onInspect && (
-          <button className="spectrum-inspect icon-button" title="Inspect spectrum" aria-label="Inspect spectrum" onClick={onInspect}>
-            <Maximize2 size={17} />
-          </button>
-        )}
-      </div>
-      <div className="spectrum-meta">
-        <span>{axis[0]?.toFixed(0)}-{axis.at(-1)?.toFixed(0)} {capture.spectrum.axisUnit}</span>
-        {repetition && <span>rep {repetition}</span>}
-        <span>{values.length} bands</span>
-        <span>{capture.spectrum.signalType}</span>
-        {overlays.map((overlay) => (
-          <span key={overlay.label}>{overlay.label} q10-q90{overlay.count ? ` n=${overlay.count}` : ""}</span>
-        ))}
-      </div>
-    </div>
+    <SpectrumPlotView
+      capture={capture}
+      captureLabel={capture ? formatCaptureLabel(capture) : ""}
+      overlays={overlays}
+      onInspect={onInspect}
+    />
   );
 }
 
@@ -1467,7 +1440,7 @@ function SpectrumStatsView({ capture, compact = false }: { capture: SpectrumCapt
   );
 }
 
-function SpectrumDetailDialog({
+export function SpectrumDetailDialog({
   capture,
   overlays,
   onClose,
@@ -1494,6 +1467,7 @@ function SpectrumDetailDialog({
         <div className="dialog-grid">
           <div className="dialog-main">
             <SpectrumView capture={capture} overlays={overlays} />
+            <SpectrumPointTable capture={capture} captureLabel={formatCaptureLabel(capture)} overlays={overlays} />
             <SpectrumStatsView capture={capture} />
           </div>
           <div className="dialog-side">
@@ -1740,9 +1714,25 @@ function revealScanResult() {
   }, 80);
 }
 
-function buildOverlay(captures: SpectrumCapture[], selectedCapture: SpectrumCapture | null, label: string): SpectrumEnvelope | null {
-  if (!selectedCapture?.spectrum) return null;
-  return buildSpectrumEnvelope(captures, selectedCapture.spectrum.axis, label);
+/** Persist the capture even if automatic prediction refuses its scientific inputs. */
+export async function saveCaptureWithPrediction(
+  input: SpectrumCapture,
+  artifact: PipelineArtifact | null,
+  predict: InferenceEngine["predict"],
+  persist: (capture: SpectrumCapture) => Promise<void>,
+): Promise<{ capture: SpectrumCapture; predictionError?: string }> {
+  let capture = input;
+  let predictionError: string | undefined;
+  if (artifact?.runnable) {
+    try {
+      capture = { ...capture, prediction: await predict(capture, artifact) };
+    } catch (error) {
+      predictionError = formatError(error);
+      capture = { ...capture, metadata: { ...capture.metadata, prediction_error: predictionError } };
+    }
+  }
+  await persist(capture);
+  return { capture, predictionError };
 }
 
 function createProject(name: string): Project {

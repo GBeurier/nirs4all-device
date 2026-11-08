@@ -1,0 +1,103 @@
+{
+  "schema_version": "nirs4all.vendored-npm/v1",
+  "package": {
+    "name": "@nirs4all/methods",
+    "version": "1.3.15+local.20261108.1"
+  },
+  "source": {
+    "kind": "delivered-source-with-focused-overlay",
+    "base_commit_sha": "e21c75cc329d81be0c7c6aec3764a6308d580de5",
+    "files": [
+      {
+        "path": "bindings/js/test/run_estimator_roles.mjs",
+        "before": "5e606c3f95e44942a3c858bf683f3734ab4e67cf81dd65f62a09c79350e9deaa",
+        "after": "c88321c4e7a52a323bc78828d0359a40d75b9f872d9c2f78c91cadce70b60d47"
+      },
+      {
+        "path": "bindings/js/test/run_finite_column_quantiles.mjs",
+        "before": null,
+        "after": "d9a7c566a1c2972996bfad0a41a08508476c3ff367e30ff594307d9d0b862efc"
+      },
+      {
+        "path": "catalog/methods/utilities.finite_column_quantiles.yaml",
+        "before": null,
+        "after": "25c0d1fc22f3dd8bee9bead8e26070150d8304c5ec4b4e971d02550aa6a38ae6"
+      },
+      {
+        "path": "catalog/methods.yaml",
+        "before": "0a11ef34ffb732eef14536ea1ca305b9009610bf0d9445057b48035130ca842a",
+        "after": "2af474aa447501c64a06d91142dfc79e2080c79e158b489df9361165efe56aba"
+      },
+      {
+        "path": "cpp/src/core/estimator/generated_factories.hpp",
+        "before": "6a093763d53b3ddd4c4407cf0f0d3fdab9b96eec9e485936e0de7ad939816a17",
+        "after": "46fdcc7cdd95519b4f3e71d7e539ed8d38f7a9bc0d30fab654ef45eadffb8820"
+      },
+      {
+        "path": "cpp/src/core/estimator/generated_manifest.inc",
+        "before": "514eb6894e8951b25998ab24cd6c55f461382b4d65c3e22f9d1c6f4de2623f51",
+        "after": "1a43396c9e543f46e571bc15500ea6e61166559c2c14a003ee661a371ce2cc96"
+      },
+      {
+        "path": "cpp/src/core/estimator/procedures.cpp",
+        "before": "21c3103c2966e7314b40fab647d2c0580381e76822b8129f3633bbe0b1c4053d",
+        "after": "eec5565425dfbb620322d658a26242fdd5c2ca647320e7c8e98b2f304c4c1920"
+      },
+      {
+        "path": "cpp/tests/CMakeLists.txt",
+        "before": "cd5d6397778a9e0e1be4de2c0f4cd0ec3038e00f9b190a9da8a0b895ad329e60",
+        "after": "7f321416da76413206ffd80bc1b0dd30657f0f26f03752dce29289c43702b5f5"
+      },
+      {
+        "path": "cpp/tests/test_finite_column_quantiles.c",
+        "before": null,
+        "after": "b3ddac020d184119f9318079f2a95943f734aa7a1c9f2e76c1301625751bc79b"
+      },
+      {
+        "path": "cpp/tests/test_procedure.cpp",
+        "before": "56c271d8438722df464b96e8560328b1285d95a00727e346ff86d9f1a80cef24",
+        "after": "9ddf3d1433eb5eca9be3244dcfbbe248c12badf1666e1d5490b0d17f1f99ac06"
+      },
+      {
+        "path": "bindings/python/src/n4m/roles/_generated.py",
+        "before": "01ebb8fff38af4e99a6a4f153303ddb017076e85654f8bba630a03a2d43bb6a3",
+        "after": "0fc56a586d6ecb2b0d017f934172bd1fc8466203b20ae039dcc7e1e508ef4e53"
+      },
+      {
+        "path": "bindings/python/src/n4m/roles/__init__.py",
+        "before": "54c4cfb520a1f5f74118e6f2967fe8fef6f8e5bdaec1e61077e3eadc24bf4913",
+        "after": "ff7edae7d712955158935e4f6f15069f8aa5dddf5f473219e5c1bdb1327cc64e"
+      },
+      {
+        "path": "bindings/js/src/estimatorRolesGenerated.ts",
+        "before": "0161e76a930a2965a5674e056c9a71b24cf28f6e835528f9450c9d8a0519aa7c",
+        "after": "c908e4bf481a8cf6378dad05bd8ac75408eaea3a4ce603e0de10f1ed200bc945"
+      },
+      {
+        "path": "bindings/r/n4m/R/estimator_roles_generated.R",
+        "before": "3f3d2fbc0ed735f486f59ff6b84ecb563f3cc00d31f5c40a5a15467ad3804d8e",
+        "after": "b6843265061909988d517cd3ed97117620fe7443b47d7bd8d911e308508a7105"
+      },
+      {
+        "path": "bindings/r/n4m/man/n4m_estimator_role_constructors.Rd",
+        "before": "776c02989c0826815bca650cb25d111f39ffb61d1616ae162a51c0c8bdbf75b0",
+        "after": "68bcafec446a974b2f9a366c46658ee8d1ec8ccf71050565caf02f80ba82ffa3"
+      },
+      {
+        "path": "bindings/r/n4m/NAMESPACE",
+        "before": "8dce81394798db17f1ffa18b066a18ac4e7873066300d6963b6a454dfcea7b5d",
+        "after": "56de0b5004a4e8b0a12413322404a231c2ab09d88ab535a9b919db6925819e8b"
+      }
+    ],
+    "note": "One native and one WASM build; canonical roles generated from the new native CLI. Empty compiled Git getter; no registry claim. Local package build metadata replaces prerelease notation to satisfy existing peer ranges; every JS/WASM member is unchanged."
+  },
+  "artifact": {
+    "filename": "nirs4all-methods-1.3.15+local.20261108.1.tgz",
+    "size": 1920431,
+    "sha256": "a82152f769de3e9b4d3f6b3b3d962a65bc4bce38ecc79491e1bcb25f48ceb2c3",
+    "npm_integrity": "sha512-2NmBkgak1TcTL1WXGuqXy+/iMpyyxREa7k4vloJL/nwM6a7qJCyMgWHylu+VXFEItXhgjeLes7HBaahz5dWOgQ=="
+  },
+  "publication": {
+    "status": "unpublished-local-development"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "schema_version": "nirs4all.vendored-npm/v1",
+  "package": {
+    "name": "nirs4all-ui",
+    "version": "0.2.2-local.20261108.1"
+  },
+  "source": {
+    "kind": "delivered-source-with-focused-overlay",
+    "base_commit_sha": "69232e483677c7739def32ed799fee61d9171fce",
+    "overlay_files": [
+      {
+        "path": "src/viz/SpectraPlot.tsx",
+        "mode": "644",
+        "before_sha256": "256b4f513a4e8674953dd71633bd917932d29c46dcc8242702225bfa44f88163",
+        "after_sha256": "8b54c0ad18f6b8124c77a7cbb7e7ab4f84a7a7bde2afe8937f6e40010d4a31bb"
+      },
+      {
+        "path": "src/viz/SpectraPlot.test.tsx",
+        "mode": "644",
+        "before_sha256": "83ea9017c0aaf9e687306dc2dc23c44f5b99936d07b2c5f03162ca114cb100ce",
+        "after_sha256": "04ed24594f1166bdbe0a3724af1dd8b35785dca3edad429f5a1f772fdbe29270"
+      },
+      {
+        "path": "site/src/showcaseData.tsx",
+        "mode": "644",
+        "before_sha256": "0d2f6d312e6e9a5e58e6bde50a6a3b56c3bd608b7ed95b8942a422d1c4b7f90b",
+        "after_sha256": "8e064cffff53117e2a60065ef29f7028e1c13919e4c43a471bc633a5fa2ea00e"
+      }
+    ],
+    "note": "One UI build from the delivered baseline plus three source postimages; version override only in the build export. No registry or release claim."
+  },
+  "artifact": {
+    "filename": "nirs4all-ui-0.2.2-local.20261108.1.tgz",
+    "size": 3752668,
+    "sha256": "2720f8aafa05ba53edfa432e4f2a344ec3efe230cfeefb0852d8c4b309dcb0a7",
+    "npm_integrity": "sha512-CF5h4H+TDMeljkGYiELkW6jKJarz4Rsd5Umn6Lm9movNhHIuDbqku7cJ4M/bx+tFz1mHqrSnYLsoZuQ178yNfg=="
+  },
+  "publication": {
+    "status": "unpublished-local-development"
+  }
+}

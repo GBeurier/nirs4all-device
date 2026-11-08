@@ -5,8 +5,8 @@ import {
   type PipelineDefinition,
   type PortableExecutionResult,
 } from "nirs4all";
-import type { PipelineArtifact, PredictionResult, SpectrumCapture } from "@/domain/types";
-import { interpolateSpectrum } from "@/domain/spectrum";
+import type { PipelineArtifact, PredictionResult, SpectrumCapture, SpectrumDescriptor } from "@/domain/types";
+import { alignSpectrum, initializeSpectrumMethods, requireSpectrumDescriptor } from "@/runtime/spectrumAlignment";
 
 export interface InferenceEngine {
   readonly name: string;
@@ -44,11 +44,12 @@ export class PortableNirs4allInferenceEngine implements InferenceEngine {
     if (!artifact.runnable) throw new Error(artifact.validationMessage ?? "This n4a artifact is a pipeline definition, not a fitted portable model.");
     if (!capture.spectrum) throw new Error("Cannot predict without a decoded numeric spectrum.");
     const portable = extractPortableResult(artifact.raw);
-    const axis = portable.axis ?? capture.spectrum.axis;
-    const spectrum = interpolateSpectrum(capture.spectrum, axis);
+    if (!portable.descriptor) throw new Error(portable.descriptorError);
+    const spectrum = await alignSpectrum(capture.spectrum, portable.descriptor);
     if (spectrum.values.length !== artifact.nFeatures) {
       throw new Error(`Spectrum has ${spectrum.values.length} features but artifact expects ${artifact.nFeatures}.`);
     }
+    await initializeSpectrumMethods();
     const result = await predictPortablePipeline(portable.result, {
       X: Float64Array.from(spectrum.values),
       rows: 1,
@@ -67,27 +68,41 @@ export class PortableNirs4allInferenceEngine implements InferenceEngine {
   async fitDemoArtifact(captures: SpectrumCapture[]): Promise<PipelineArtifact> {
     const decoded = captures.filter((capture) => capture.spectrum) as Array<SpectrumCapture & { spectrum: NonNullable<SpectrumCapture["spectrum"]> }>;
     if (decoded.length < 4) throw new Error("At least four decoded captures are required to fit a demo portable pipeline.");
-    const axis = decoded[0].spectrum.axis;
-    const X = decoded.flatMap((capture) => interpolateSpectrum(capture.spectrum, axis).values);
+    // Core 0.4.5 demo path: decoded[0] is the explicit feature reference.
+    const descriptor = requireSpectrumDescriptor(decoded[0].spectrum);
+    const aligned = await Promise.all(decoded.map(async (capture) => {
+      try {
+        return await alignSpectrum(capture.spectrum, descriptor);
+      } catch (error) {
+        throw new Error(`Demo fit refused capture ${capture.id}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }));
+    const X = aligned.flatMap((spectrum) => spectrum.values);
     const y = decoded.map((_, index) => 10 + index * 0.7);
     const pipeline: PipelineDefinition = {
       name: "Device demo SNV + PLS",
-      description: "Portable nirs4all demo pipeline fitted from captured spectra.",
+      description: "Synthetic demo only: demo_target = 10 + 0.7 * row index; no measured endpoint or validation result.",
       pipeline: [
         { class: "nirs4all.operators.transforms.StandardNormalVariate" },
         { model: { class: "sklearn.cross_decomposition.PLSRegression", params: { n_components: 2 } } },
       ],
     };
+    await initializeSpectrumMethods();
     const result = await runPortablePipeline(pipeline, {
       X: Float64Array.from(X),
       y: Float64Array.from(y),
       rows: decoded.length,
-      cols: axis.length,
+      cols: descriptor.axis.length,
     });
     const raw = {
       format: "nirs4all-device.portable-pipeline.v1",
       pipeline,
-      axis,
+      axis: [...descriptor.axis],
+      axisUnit: descriptor.axisUnit,
+      signalType: descriptor.signalType,
+      trainingCaptureIds: decoded.map((capture) => capture.id),
+      excludedCaptures: captures.filter((capture) => !capture.spectrum).map((capture) => ({ captureId: capture.id, reason: "Decoded spectrum unavailable." })),
+      demoTarget: { kind: "synthetic", formula: "10 + 0.7 * row index" },
       result,
       targetName: "demo_target",
       createdAt: new Date().toISOString(),
@@ -97,7 +112,7 @@ export class PortableNirs4allInferenceEngine implements InferenceEngine {
       name: pipeline.name,
       importedAt: new Date().toISOString(),
       engine: this.name,
-      nFeatures: axis.length,
+      nFeatures: descriptor.axis.length,
       runnable: true,
       kind: "portable_result",
       targetName: "demo_target",
@@ -123,8 +138,9 @@ function parseArtifact(raw: unknown, filename: string): {
       name: portable.name,
       engine: "nirs4all-core-js-wasm",
       nFeatures: portable.result.cols,
-      runnable: true,
+      runnable: portable.descriptor !== undefined,
       kind: "portable_result",
+      validationMessage: portable.descriptorError,
       targetName: portable.targetName,
     };
   } catch (error) {
@@ -143,17 +159,34 @@ function parseArtifact(raw: unknown, filename: string): {
   }
 }
 
-function extractPortableResult(raw: unknown): { name: string; axis?: number[]; result: PortableExecutionResult; targetName?: string } {
+function extractPortableResult(raw: unknown): {
+  name: string;
+  descriptor?: SpectrumDescriptor;
+  descriptorError?: string;
+  result: PortableExecutionResult;
+  targetName?: string;
+} {
   if (!raw || typeof raw !== "object") throw new Error("Invalid nirs4all pipeline artifact.");
   const obj = raw as Record<string, unknown>;
   const result = (obj.result ?? obj.execution_result ?? obj.model) as PortableExecutionResult | undefined;
   if (!result || typeof result !== "object" || !("model" in result) || typeof result.cols !== "number") {
     throw new Error("Artifact must contain a portable nirs4all execution result.");
   }
-  const axis = Array.isArray(obj.axis) ? obj.axis.map(Number) : undefined;
+  let descriptor: SpectrumDescriptor | undefined;
+  let descriptorError: string | undefined;
+  if (obj.axis === undefined || obj.axisUnit === undefined || obj.signalType === undefined) {
+    descriptorError = "unavailable — feature descriptor missing";
+  } else {
+    try {
+      descriptor = requireSpectrumDescriptor(obj);
+    } catch (error) {
+      descriptorError = `unavailable — invalid feature descriptor: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
   return {
     name: String(obj.pipelineName ?? obj.pipeline ?? result.name ?? "portable pipeline"),
-    axis,
+    descriptor,
+    descriptorError,
     result,
     targetName: typeof obj.targetName === "string" ? obj.targetName : undefined,
   };

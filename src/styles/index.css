@@ -1,4 +1,5 @@
 @import "nirs4all-ui/assets/theme.css";
+@import "nirs4all-ui/assets/viz.css";
 
 :root {
   /* App aliases deliberately map to the shared nirs4all-ui visual system. */
@@ -489,23 +490,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   min-height: 260px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background:
-    linear-gradient(color-mix(in oklab, var(--brand-teal) 10%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in oklab, var(--brand-teal) 10%, transparent) 1px, transparent 1px),
-    var(--card);
-  background-size: 42px 42px;
+  background: var(--card);
 }
-.spectrum-view polyline { fill: none; stroke: var(--brand-teal); stroke-width: 1.8; vector-effect: non-scaling-stroke; }
-.spectrum-plot > svg > polyline {
-  stroke-width: 2;
-  filter: drop-shadow(0 1px 5px color-mix(in oklab, var(--brand-teal) 55%, transparent));
-}
-.spectrum-view .quantile-overlay polygon { vector-effect: non-scaling-stroke; }
-.spectrum-view .quantile-overlay polyline { stroke-width: 1.1; stroke-dasharray: 3 3; opacity: 0.9; }
-.spectrum-view .quantile-overlay.project polygon { fill: color-mix(in oklab, var(--brand-cyan) 20%, transparent); stroke: color-mix(in oklab, var(--brand-cyan) 38%, transparent); }
-.spectrum-view .quantile-overlay.project polyline { stroke: var(--brand-cyan); }
-.spectrum-view .quantile-overlay.session polygon { fill: color-mix(in oklab, var(--brand-indigo) 18%, transparent); stroke: color-mix(in oklab, var(--brand-indigo) 36%, transparent); }
-.spectrum-view .quantile-overlay.session polyline { stroke: var(--brand-indigo); }
+.spectrum-summary { margin: 0; color: var(--muted-foreground); font-size: 12px; overflow-wrap: anywhere; }
+.spectrum-point-details { min-width: 0; }
+.spectrum-point-details summary { cursor: pointer; padding: 8px 0; font-weight: 700; }
+.spectrum-point-scroll { max-width: 100%; max-height: 360px; overflow: auto; }
+.spectrum-point-scroll table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.spectrum-point-scroll caption { text-align: left; padding: 8px 0; }
+.spectrum-point-scroll th, .spectrum-point-scroll td { padding: 6px 8px; border: 1px solid var(--border); text-align: right; }
 .spectrum-inspect { position: absolute; top: 10px; right: 10px; background: color-mix(in oklab, var(--card) 90%, transparent); }
 .spectrum-meta { display: flex; flex-wrap: wrap; gap: 8px; color: var(--muted-foreground); font-size: 12px; font-weight: 700; }
 .spectrum-meta span { border: 1px solid var(--border); border-radius: 999px; padding: 4px 8px; background: var(--card); }

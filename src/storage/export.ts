@@ -12,7 +12,7 @@ export interface ExportContext {
   pipelines?: PipelineArtifact[];
 }
 
-export function buildExport(captures: SpectrumCapture[], kind: ExportKind, context: ExportContext = {}): { filename: string; mime: string; text: string } {
+export async function buildExport(captures: SpectrumCapture[], kind: ExportKind, context: ExportContext = {}): Promise<{ filename: string; mime: string; text: string }> {
   const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
   if (kind === "json") {
     return {
@@ -46,7 +46,7 @@ export function buildExport(captures: SpectrumCapture[], kind: ExportKind, conte
     return {
       filename: `nirs4all-device-matrix-${stamp}.csv`,
       mime: "text/csv",
-      text: capturesToMatrixCsv(captures),
+      text: await capturesToMatrixCsv(captures),
     };
   }
   if (kind === "metadata-csv") {
