@@ -1,0 +1,47 @@
+{
+  "scope": "Exact public npm Core, Formats, Methods and DAG archives; no compilation. Other selections retained. No direct IO runtime.",
+  "core": {
+    "source": {
+      "repository": "https://github.com/GBeurier/nirs4all-core",
+      "commit": "53f53b727e983057f137f42ca0f87d7368db5990",
+      "tree": "77dfd729cad80579b61a63d80a80cec442289dc6"
+    },
+    "registry": {
+      "metadata_url": "https://registry.npmjs.org/nirs4all/0.5.0",
+      "tarball_url": "https://registry.npmjs.org/nirs4all/-/nirs4all-0.5.0.tgz",
+      "size": 4526405,
+      "sha256": "ed99284503dd0096f514e631329b70377e13093ed858428f4631a2b2a317b847",
+      "sha1": "d66674bdbd4885d503e7eb35969980b36393f22c",
+      "integrity": "sha512-eg/jFzuacaxb1XIKvgF6jPAgoOwU0Dsmkhf734FriPYw36lBjzoHKSDEZPlIzcZ5pc2QhoSBe0JPzfnGH4LOog=="
+    }
+  },
+  "reused_artifacts": {
+    "formats": {
+      "source_archive": "/home/delete/nirs4all/_implementation/2026-11-03-ecosystem-consolidation/release-integration-20261109/web-quali-public-stage/20261109T045130Z/acquisition/nirs4all-formats-wasm-0.2.16.tgz",
+      "source_metadata": "/home/delete/nirs4all/_implementation/2026-11-03-ecosystem-consolidation/release-integration-20261109/web-quali-public-stage/20261109T045130Z/acquisition/formats.metadata.json",
+      "public_source": "819f5764a2138d755155e5018d7bbcb178924861",
+      "sha256": "e7ea3381c8d63e9d4ea5a315dde79a7dcc0286463eade3f064293fc771ea43f7",
+      "integrity": "sha512-D7Ri99HaWL8fjuV/Nqx46nFq1JtPLmJ/+NMXGYMWziPnl1kG7bSP5OjClyjk55Ue4CjuZf7X6uWCl79Z5OH4VQ==",
+      "size": 2199333,
+      "consumer_profile": "Device uses exact public npm archive; Web/Quali retain their qualified projection/browser profile."
+    },
+    "methods": {
+      "source_archive": "/home/delete/nirs4all/_implementation/2026-11-03-ecosystem-consolidation/release-integration-20261109/web-quali-public-stage/20261109T045130Z/acquisition/nirs4all-methods-1.3.15.tgz",
+      "source_metadata": "/home/delete/nirs4all/_implementation/2026-11-03-ecosystem-consolidation/release-integration-20261109/web-quali-public-stage/20261109T045130Z/acquisition/methods.metadata.json",
+      "public_source": "50c2cbacc58a69af43e6fc3867be16a16293c793",
+      "sha256": "85f26a1ff1b8803bc15afd6813dc7bfd9f5d197e5d51a574fbda9ea6beb4f8d1",
+      "integrity": "sha512-gf6WOjxCgwAzZN6RbgbtZd2LE12/WrtgLM3obBuA4BW08AAP84ixZS78qAVrq2dFVbp/m8tCusgotkpWRjz4BA==",
+      "size": 1939074,
+      "consumer_profile": "Device uses exact public npm archive; Web/Quali retain their qualified projection/browser profile."
+    },
+    "dagml": {
+      "source_archive": "/home/delete/nirs4all/_implementation/2026-11-03-ecosystem-consolidation/release-integration-20261109/web-quali-public-stage/20261109T045130Z/acquisition/dag-ml-wasm-0.4.0.tgz",
+      "source_metadata": "/home/delete/nirs4all/_implementation/2026-11-03-ecosystem-consolidation/release-integration-20261109/web-quali-public-stage/20261109T045130Z/acquisition/dagml.metadata.json",
+      "public_source": "beaba0b62f9a65bca86c2f521fc482bd80092ba3",
+      "sha256": "b5be2713f79c12281413a3c8829d4355162782a9f6206c7319e4aadae48b035b",
+      "integrity": "sha512-mt6sQpFI7xFvencITI5hvi4TvljsS8eKCSKObE5TtgFr6TI8ET78mSvZGnwY96v7203IimkHxJUc7hRjYNHOgA==",
+      "size": 3516038,
+      "consumer_profile": "Device uses exact public npm archive; Web/Quali retain their qualified projection/browser profile."
+    }
+  }
+}
