@@ -74,9 +74,9 @@ export function loadOwners() {
     await dmd.default();
     const version = /^(\d+)\.(\d+)\.(\d+)(?:\+[^\s]+)?$/.exec(methods.version())?.slice(1).map(Number);
     const abi = methods.abiVersion();
-    if (!version || version[0] !== 1 || !(version[1] > 3 || version[1] === 3 && version[2] >= 15)
-      || abi[0] !== 2 || abi[1] < 22) {
-      throw new Error("Device requires staged Methods >=1.3.15 <2 with ABI >=2.22 <3.");
+    if (!version || version[0] !== 1 || version[1] !== 5
+      || abi[0] !== 2 || abi[1] < 24) {
+      throw new Error("Device requires staged Methods >=1.5.0 <1.6 with ABI >=2.24 <3.");
     }
     return { dag, dmd, methods, Controller: adapter.N4mWasmRegressionController, hash };
   })();
