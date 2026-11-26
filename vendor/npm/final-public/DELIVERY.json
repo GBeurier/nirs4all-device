@@ -1,29 +1,30 @@
 {
-  "scope": "Exact public npm Core, Formats, Methods and DAG archives; no compilation. Other selections retained. No direct IO runtime.",
+  "scope": "Exact public npm Core, Formats, Methods and DAG archives and the published browser-target Datasets files. The lock selects DMD and UI.",
   "core": {
     "source": {
       "repository": "https://github.com/GBeurier/nirs4all-core",
-      "commit": "ef74d999b48e8eb4b8cce46355598673c0fc08b8",
-      "tree": "18112da2c33172eefdf5716b21f551e58b479415"
+      "commit": "2bc85980b22b21b3990631dbd1cb6080762e0735",
+      "tree": "13bc15f3e9c7c468ba7d84ffebfc2a5a96639a77",
+      "tag": "v0.7.0"
     },
     "registry": {
-      "metadata_url": "https://registry.npmjs.org/nirs4all/0.6.0",
-      "tarball_url": "https://registry.npmjs.org/nirs4all/-/nirs4all-0.6.0.tgz",
-      "size": 4534923,
-      "sha256": "4101c30f8e922f9e476db8cede9602ca45ea371d5165ea0d6c09158b28fd8b15",
-      "sha1": "f872479a931c155e53cd4011008f1e7c5cb44bf5",
-      "integrity": "sha512-d3vMEQ9IHV3pVEzDU4LgZ+ppEF8f9d++ngjU3rnF2VC7cSGg3yIbKhtTttDuQUTp+7cOKK7QxXgD44gHIjg7mQ=="
+      "metadata_url": "https://registry.npmjs.org/nirs4all/0.7.0",
+      "tarball_url": "https://registry.npmjs.org/nirs4all/-/nirs4all-0.7.0.tgz",
+      "size": 4533135,
+      "sha256": "1a982a0fb932ba9f61a828cfd4aa5c21262906d8b1dccb11cc14918ccb37681c",
+      "sha1": "55ce3a0e6b74ca10851e009fbe1aa6e5ef3b89e7",
+      "integrity": "sha512-Pg8tWltPUjBiRNvnZWCEzzab/lQQyefEA7Xwsw2S6BxQ3nXMxDEoN8vy3giQxnTKcUgtKHJdTzBDuIYoh9a0LA=="
     }
   },
   "reused_artifacts": {
     "formats": {
-      "source_archive": "/home/delete/nirs4all/_implementation/2026-11-03-ecosystem-consolidation/release-integration-20261109/web-quali-public-stage/20261109T045130Z/acquisition/nirs4all-formats-wasm-0.2.16.tgz",
-      "source_metadata": "/home/delete/nirs4all/_implementation/2026-11-03-ecosystem-consolidation/release-integration-20261109/web-quali-public-stage/20261109T045130Z/acquisition/formats.metadata.json",
-      "public_source": "819f5764a2138d755155e5018d7bbcb178924861",
-      "sha256": "e7ea3381c8d63e9d4ea5a315dde79a7dcc0286463eade3f064293fc771ea43f7",
-      "integrity": "sha512-D7Ri99HaWL8fjuV/Nqx46nFq1JtPLmJ/+NMXGYMWziPnl1kG7bSP5OjClyjk55Ue4CjuZf7X6uWCl79Z5OH4VQ==",
-      "size": 2199333,
-      "consumer_profile": "Device uses exact public npm archive; Web/Quali retain their qualified projection/browser profile."
+      "source_archive": "vendor/npm/final-public/nirs4all-formats-wasm-0.3.1.tgz",
+      "source_metadata": "https://registry.npmjs.org/@nirs4all%2fformats-wasm/0.3.1",
+      "public_source": "89f191396772c71379e7ad788f29f30472369498",
+      "sha256": "620fc142dedf429562a68a8faf66d9ba7a746ec47642fcec895c6888d92667fc",
+      "integrity": "sha512-qy/xoolMc1L9+FCDuEASVAbbxVSfKovHWVtl3PwsAODE/MwQE9dIA0w4P6+UfSj62ItcdWLhEUODC70PiNBHbA==",
+      "size": 2476501,
+      "consumer_profile": "Exact public npm archive, Formats 0.3.1."
     },
     "methods": {
       "source_archive": "vendor/npm/final-public/nirs4all-methods-1.5.1.tgz",
@@ -42,6 +43,22 @@
       "integrity": "sha512-Ri7f+v5ZYyglVRObn7AU5ECRWB1z8WCaONxxRHYio9h3I6EGI18hkIhVvMVj0se7AjP28jJkMILayhLu8qzYvA==",
       "size": 3647154,
       "consumer_profile": "Exact public npm archive, dag-ml-wasm 0.5.0; no local rebuild."
+    },
+    "datasets": {
+      "source_archive": "vendor/npm/final-public/nirs4all-datasets-wasm-0.4.0-web.tgz",
+      "source_metadata": "https://github.com/GBeurier/nirs4all-datasets/releases/download/v0.4.0/nirs4all-datasets-browser-web.provenance.json",
+      "public_source": "74bd2c6a21d344771efa0c23695216e667daba6b",
+      "sha256": "c8e8ec427964a8526808399dc76aa814d1efe0575a7f89bb93c0fde913145716",
+      "size": 478933,
+      "consumer_profile": "Device web module assembled from the four owner release files and the verified npm license material. The public Node tarball has its own checksum.",
+      "npm_registry": {
+        "metadata_url": "https://registry.npmjs.org/@nirs4all%2fdatasets-wasm/0.4.0",
+        "tarball_url": "https://registry.npmjs.org/@nirs4all/datasets-wasm/-/datasets-wasm-0.4.0.tgz",
+        "size": 419363,
+        "sha256": "2a160bdd9a2c7cb212ad2fbc79df7c4cd6e40375a70d305d698635850b44e4ea",
+        "sha1": "c7a5fa62da208cab0fbb47fb7a28a57d9ebd5146",
+        "integrity": "sha512-3SFk5R2Nd+/+Su2p8O3/lnVBlk2qTMYHhoItIh+yIY1FjE9ykF4n0HlYONvWVyPa5tISVmgvkxh9pWK03ofIIw=="
+      }
     }
   }
 }
